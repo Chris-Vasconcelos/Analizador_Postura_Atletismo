@@ -2,7 +2,7 @@ import cv2
 import sys
 import os
 import numpy as np
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QPushButton, QLabel, QFileDialog, QFrame)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QImage, QPixmap
@@ -18,35 +18,35 @@ from src.visualization import SprintVisualizer
 def mejorar_claridad_biomecanica(frame, apply_gamma=True):
     """
     Versión optimizada para laboratorios de alto rendimiento.
-    
+
     Args:
         frame: Frame en formato BGR
         apply_gamma: Si True, aplica corrección gamma para mejor manejo de sombras
     """
     import cv2
     import numpy as np
-    
+
     # 1. Filtro Bilateral: Quita el 'ruido' de la cámara pero deja tus bordes nítidos
     # Esto evita que MediaPipe 'tiemble'
     frame = cv2.bilateralFilter(frame, 5, 75, 75)
-    
+
     # 2. Convertir a HSV
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     h, s, v = cv2.split(hsv)
-    
+
     # 3. CLAHE en el canal V (Brillo Inteligente)
     # En lugar de sumar +20, esto redistribuye la luz de forma inteligente
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
     v = clahe.apply(v)
-    
+
     # 3b. Corrección Gamma (opcional) - evita que sombras se pierdan
     if apply_gamma:
         v = np.power(v / 255.0, 0.9) * 255.0
         v = v.astype(np.uint8)
-    
+
     # 4. Aumentar saturación de forma segura
     s = cv2.add(s, 30)
-    
+
     hsv = cv2.merge([h, s, v])
     return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 
@@ -76,63 +76,63 @@ class AnalysisThread(QThread):
         try:
             print(f"[DEBUG] Iniciando análisis en vivo: {self.video_path}")
             cap = cv2.VideoCapture(self.video_path)
-            
+
             if not cap.isOpened():
                 self.error_signal.emit("No se pudo abrir el video")
                 return
-                
+
             pose = mp.solutions.pose.Pose(model_complexity=2)
             frame_idx = 0
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             print(f"[DEBUG] Total de frames: {total_frames}")
-            
+
             while cap.isOpened():
                 ret, frame = cap.read()
                 if not ret:
                     break
-                
+
                 # Optimización: redimensionar antes del procesamiento (más rápido)
                 # MediaPipe internamente usa ~256x256, así que no perdemos precisión
                 frame_small = cv2.resize(frame, (640, 360))
-                
+
                 # 1. Mejora Visual HSV en vivo (sobre imagen pequeña)
                 frame_preview = mejorar_claridad_biomecanica(frame_small)
-                
+
                 # Redimensionar de vuelta para mostrar al usuario
                 frame_preview = cv2.resize(frame_preview, (frame.shape[1], frame.shape[0]))
-                
+
                 rgb_frame = cv2.cvtColor(frame_preview, cv2.COLOR_BGR2RGB)
                 res = pose.process(rgb_frame)
-                
+
                 if res.pose_landmarks:
                     # Dibujar esqueleto para feedback en vivo
                     mp.solutions.drawing_utils.draw_landmarks(
                         frame_preview, res.pose_landmarks, mp.solutions.pose.POSE_CONNECTIONS)
-                    
+
                     l = res.pose_landmarks.landmark
                     lm = mp.solutions.pose.PoseLandmark
                     # Calcular ambos ángulos
                     ang_r = self.calculate_angle(l[lm.RIGHT_HIP], l[lm.RIGHT_KNEE], l[lm.RIGHT_ANKLE])
                     ang_l = self.calculate_angle(l[lm.LEFT_HIP], l[lm.LEFT_KNEE], l[lm.LEFT_ANKLE])
-                    
+
                     # Emitir métricas y gráfica
                     self.metrics_signal.emit({
-                        'knee_r': ang_r, 
+                        'knee_r': ang_r,
                         'knee_l': ang_l,
                         'status': f"Trackeando... Frame {frame_idx}/{total_frames}"
                     })
                     self.graph_signal.emit(float(ang_r), int(frame_idx))
                 else:
                     self.metrics_signal.emit({'status': f"Sin detección - Frame {frame_idx}"})
-                
+
                 # Enviar frame mejorado con skeleton
                 self.change_pixmap_signal.emit(frame_preview)
                 frame_idx += 1
-                
+
             cap.release()
             print(f"[DEBUG] Análisis en vivo completado. Frames procesados: {frame_idx}")
             self.metrics_signal.emit({'status': "Finalizado ✅"})
-            
+
         except Exception as e:
             print(f"[ERROR] Error en hilo de análisis: {e}")
             import traceback
@@ -210,8 +210,8 @@ class ModernSprintDashboard(QMainWindow):
         self.video_frame.setMinimumSize(800, 450)
         self.video_frame.setAlignment(Qt.AlignCenter)
         self.video_frame.setStyleSheet("""
-            background-color: #000; border-radius: 15px; 
-            color: #475569; font-size: 20px; 
+            background-color: #000; border-radius: 15px;
+            color: #475569; font-size: 20px;
             border: 2px dashed #334155;
         """)
 
@@ -296,14 +296,14 @@ class ModernSprintDashboard(QMainWindow):
             self.status_lbl.setText("⚠️ Error: Carga un video primero")
             self.status_lbl.setStyleSheet("color: #EF4444;")
             return
-        
+
         print(f"[DEBUG] Iniciando análisis para: {self.current_video}")
-        
+
         # Limpiar gráfica
         self.graph_x = []
         self.graph_y = []
         self.graph_curve.setData([], [])
-        
+
         # Iniciar hilo de análisis en vivo
         self.thread = AnalysisThread(self.current_video)
         self.thread.change_pixmap_signal.connect(self.update_image)
@@ -312,7 +312,7 @@ class ModernSprintDashboard(QMainWindow):
         self.thread.error_signal.connect(self.on_analysis_error)
         self.thread.finished.connect(self.on_analysis_finished)
         self.thread.start()
-        
+
         self.status_lbl.setText("🔄 Análisis en vivo...")
         self.status_lbl.setStyleSheet("color: #F59E0B; font-weight: bold;")
 
@@ -393,31 +393,31 @@ class ModernSprintDashboard(QMainWindow):
         import cv2
         import mediapipe as mp
         from datetime import datetime
-        
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_dir = f"analysis_results/{timestamp}"
         os.makedirs(output_dir, exist_ok=True)
         out_path = f"{output_dir}/sprint_analyzed.mp4"
-        
+
         cap = cv2.VideoCapture(self.current_video)
         fps = result.fps
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        
+
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         out = cv2.VideoWriter(out_path, fourcc, fps, (w, h))
-        
+
         mp_pose = mp.solutions.pose
         mp_drawing = mp.solutions.drawing_utils
-        
+
         frame_idx = 0
         time_series = result.time_series
-        
+
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
-            
+
             # Obtener landmarks del historial
             if hasattr(result, 'landmarks_history') and frame_idx < len(result.landmarks_history):
                 lms = result.landmarks_history[frame_idx]
@@ -428,13 +428,13 @@ class ModernSprintDashboard(QMainWindow):
                         mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2, circle_radius=3),
                         mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2)
                     )
-                    
+
                     # Mostrar métricas en el frame
                     self.draw_metrics_on_frame(frame, time_series, frame_idx)
-            
+
             out.write(frame)
             frame_idx += 1
-        
+
         cap.release()
         out.release()
         print(f"✅ Video guardado: {out_path}")
@@ -451,22 +451,23 @@ class ModernSprintDashboard(QMainWindow):
         else:
             self.status_lbl.setText("No hay resultados aún")
             self.status_lbl.setStyleSheet("color: #F59E0B;")
-    
+
     def draw_metrics_on_frame(self, frame, time_series, frame_idx):
         """Dibuja métricas en el frame."""
+        import cv2
         h, w = frame.shape[:2]
-        
+
         # Fondo semi-transparente
         overlay = frame.copy()
         cv2.rectangle(overlay, (10, 10), (350, 180), (0, 0, 0), -1)
         cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
-        
+
         # Obtener valores
         knee_r = time_series['knee_angle_right'][frame_idx] if frame_idx < len(time_series['knee_angle_right']) else 0
         knee_l = time_series['knee_angle_left'][frame_idx] if frame_idx < len(time_series['knee_angle_left']) else 0
         hip = time_series['hip_angle_right'][frame_idx] if frame_idx < len(time_series['hip_angle_right']) else 0
         trunk = time_series['trunk_lean'][frame_idx] if frame_idx < len(time_series['trunk_lean']) else 0
-        
+
         # Mostrar métricas
         import cv2
         cv2.putText(frame, f"Frame: {frame_idx}", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
@@ -474,12 +475,12 @@ class ModernSprintDashboard(QMainWindow):
         cv2.putText(frame, f"Rodilla I: {knee_l:.1f}°", (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         cv2.putText(frame, f"Cadera: {hip:.1f}°", (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
         cv2.putText(frame, f"Tronco: {trunk:.1f}°", (20, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-        
+
         # Score
         score = self.calculate_score(knee_r, knee_l, hip, trunk)
         color = (0, 255, 0) if score >= 70 else (0, 165, 255) if score >= 50 else (0, 0, 255)
         cv2.putText(frame, f"Score: {score}/100", (20, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-    
+
     def calculate_score(self, knee_r, knee_l, hip, trunk):
         """Calcula score biomecánico."""
         score = 100
@@ -490,16 +491,16 @@ class ModernSprintDashboard(QMainWindow):
         asymmetry = abs(knee_r - knee_l)
         if asymmetry > 15: score -= int(asymmetry)
         return max(0, min(100, int(score)))
-    
+
     def save_session_metrics(self, result):
         """Guarda métricas de la sesión."""
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_dir = f"analysis_results/{timestamp}"
-        
+
         # Crear directorio si no existe
         os.makedirs(output_dir, exist_ok=True)
-        
+
         # Guardar resumen
         summary_file = f"{output_dir}/resumen.txt"
         with open(summary_file, 'w') as f:
@@ -509,7 +510,7 @@ class ModernSprintDashboard(QMainWindow):
             f.write(f"Video: {result.video_path}\n")
             f.write(f"FPS: {result.fps:.1f}\n")
             f.write(f"Duración: {result.duration_seconds:.2f}s\n\n")
-            
+
             f.write("MÉTRICAS PRINCIPALES:\n")
             f.write("-" * 30 + "\n")
             summary = result.summary_metrics
@@ -520,26 +521,26 @@ class ModernSprintDashboard(QMainWindow):
             f.write(f"Inclinación Tronco: {summary.get('mean_trunk_lean', 0):.1f}°\n")
             f.write(f"Asimetría Rodillas: {summary.get('knee_asymmetry', 0):.1f}°\n")
             f.write(f"Asimetría Cadera: {summary.get('hip_asymmetry', 0):.1f}°\n\n")
-            
+
             f.write("TIEMPOS:\n")
             f.write("-" * 30 + "\n")
             f.write(f"Tiempo Reacción: {result.reaction_time_ms or 'N/A'} ms\n")
             f.write(f"Block Clearance: {result.block_clearance_time_ms or 'N/A'} ms\n\n")
-            
+
             f.write("CONTACTOS:\n")
             f.write("-" * 30 + "\n")
             contacts = result.contacts_summary
             f.write(f"Total Contactos: {contacts.get('total_contacts', 0)}\n")
             f.write(f"Tiempo Vuelo Prom: {contacts.get('average_flight_time_ms', 0):.0f} ms\n")
             f.write(f"Tiempo Contacto Prom: {contacts.get('average_ground_time_ms', 0):.0f} ms\n\n")
-            
+
             f.write("CONFIANZA:\n")
             f.write("-" * 30 + "\n")
             reliability = result.reliability_report
             f.write(f"Calidad: {reliability.get('validity_percentage', 0):.1f}%\n")
             f.write(f"Frames Válidos: {reliability.get('valid_frames', 0)}\n")
             f.write(f"Frames Totales: {reliability.get('total_frames', 0)}\n")
-        
+
         print(f"✅ Resumen guardado en: {summary_file}")
 
 if __name__ == "__main__":

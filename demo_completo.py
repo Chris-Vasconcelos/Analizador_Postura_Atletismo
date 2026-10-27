@@ -155,17 +155,17 @@ def run_complete_demo():
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
 
         # Mostrar frame
-        cv2.imshow('Sprint Biomechanics Pro - Sistema COMPLETO', processed_frame)
+        # cv2.imshow('Sprint Biomechanics Pro - Sistema COMPLETO', processed_frame)
 
         # Guardar frame en video de salida
         out.write(processed_frame)
 
         # Controles de teclado
-        key = cv2.waitKey(1) & 0xFF
+        key = 0xFF
 
-        if key == ord('q'):
+        if False:
             break
-        elif key == ord('s'):
+        elif False:
             # Guardar sesión actual
             if angles_history:
                 # Calcular promedios
