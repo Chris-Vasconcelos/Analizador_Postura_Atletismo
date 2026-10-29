@@ -2,6 +2,10 @@ import cv2
 import sys
 import os
 import numpy as np
+import mediapipe as mp
+import traceback
+import math
+from datetime import datetime
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QLabel, QFileDialog, QFrame)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
@@ -23,8 +27,6 @@ def mejorar_claridad_biomecanica(frame, apply_gamma=True):
         frame: Frame en formato BGR
         apply_gamma: Si True, aplica corrección gamma para mejor manejo de sombras
     """
-    import cv2
-    import numpy as np
     
     # 1. Filtro Bilateral: Quita el 'ruido' de la cámara pero deja tus bordes nítidos
     # Esto evita que MediaPipe 'tiemble'
@@ -64,15 +66,11 @@ class AnalysisThread(QThread):
     @staticmethod
     def calculate_angle(a, b, c):
         """Calcula ángulo entre 3 puntos (landmarks)."""
-        import numpy as np
-        import math
         ang = math.degrees(math.atan2(c.y - b.y, c.x - b.x) - math.atan2(a.y - b.y, a.x - b.x))
         ang = ang + 360 if ang < 0 else ang
         return ang if ang < 180 else 360 - ang
 
     def run(self):
-        import cv2
-        import mediapipe as mp
         try:
             print(f"[DEBUG] Iniciando análisis en vivo: {self.video_path}")
             cap = cv2.VideoCapture(self.video_path)
@@ -135,7 +133,6 @@ class AnalysisThread(QThread):
             
         except Exception as e:
             print(f"[ERROR] Error en hilo de análisis: {e}")
-            import traceback
             traceback.print_exc()
             self.error_signal.emit(str(e))
 
@@ -376,7 +373,6 @@ class ModernSprintDashboard(QMainWindow):
             self.status_lbl.setText("⚠️ Error fatal en análisis.")
             self.status_lbl.setStyleSheet("color: #EF4444;")
             print(f"Detalle del error: {e}")
-            import traceback
             traceback.print_exc()
 
     def load_video(self):
@@ -390,9 +386,6 @@ class ModernSprintDashboard(QMainWindow):
 
     def generate_annotated_video(self, result):
         """Genera video con skeleton y métricas."""
-        import cv2
-        import mediapipe as mp
-        from datetime import datetime
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_dir = f"analysis_results/{timestamp}"
@@ -468,7 +461,6 @@ class ModernSprintDashboard(QMainWindow):
         trunk = time_series['trunk_lean'][frame_idx] if frame_idx < len(time_series['trunk_lean']) else 0
         
         # Mostrar métricas
-        import cv2
         cv2.putText(frame, f"Frame: {frame_idx}", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         cv2.putText(frame, f"Rodilla D: {knee_r:.1f}°", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         cv2.putText(frame, f"Rodilla I: {knee_l:.1f}°", (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
@@ -493,7 +485,6 @@ class ModernSprintDashboard(QMainWindow):
     
     def save_session_metrics(self, result):
         """Guarda métricas de la sesión."""
-        from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_dir = f"analysis_results/{timestamp}"
         
