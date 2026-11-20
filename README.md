@@ -1,453 +1,77 @@
-# Sprint Biomechanics Pro - 100m Sprint Analyzer
+# SprintBiomechPro
 
-## 📋 Descripción
+Aplicación de escritorio para revisar videos de sprint, medir ángulos **proyectados en 2D** y guardar una sesión reproducible. Diseñada para Windows 10/11 y Python 3.11 o 3.12 de 64 bits. No requiere GPU.
 
-Sprint Biomechanics Pro es una aplicación profesional para el análisis biomecánico de carreras de 100 metros. Utiliza inteligencia artificial (MediaPipe) para detectar poses corporales en video y proporciona métricas detalladas sobre técnica, velocidad y eficiencia del atleta.
+## Qué funciona en esta versión
 
-**Versión 2.1** - Incluye análisis por fases específicas y estándares de élite.
+- Perfil con nombre, peso (kg) y estatura (cm), conservado entre ejecuciones.
+- Carga y vista previa de MP4, MOV, AVI, MKV y M4V, según los códecs disponibles.
+- Desplazamiento por el video y selección del intervalo de análisis.
+- FPS de captura opcionales para archivos en cámara lenta.
+- Análisis MediaPipe en segundo plano con progreso y cancelación.
+- Ángulos de rodilla y cadera izquierda/derecha e inclinación del tronco, con cobertura por métrica.
+- Distancia recorrida opcional para calcular **velocidad media declarada** del intervalo; no se estima distancia desde píxeles.
+- Exportación conjunta: `video_anotado.mp4`, `fotogramas.csv`, `sesion.json` e `informe.pdf`.
+- Una carpeta única por sesión; las sesiones canceladas o fallidas no se publican como resultados completos.
 
-## ✨ Características Principales
+## Probar en Windows
 
-### 🎯 Análisis Biomecánico Completo
-- **Detección de Pose**: MediaPipe AI para tracking corporal preciso
-- **Métricas en Tiempo Real**: Velocidad, ángulos articulares, aceleración
-- **Análisis de Salida**: Tiempo de reacción y técnica de tacos
-- **Análisis por Fases**: Evaluación específica de cada segmento (0-10m, 10-30m, 30-60m, 60-100m)
-- **Puntuaciones Globales**: Técnica, potencia y eficiencia
+1. Descarga el ZIP de **esta rama** desde GitHub (`Code → Download ZIP`) y extráelo. No ejecutes los archivos dentro del ZIP.
+2. Instala Python **3.12 de 64 bits** (o 3.11), incluido el lanzador `py`, si aún no lo tienes.
+3. Abre `install.bat`. Instala las dependencias en `.venv` dentro de esta carpeta; requiere Internet.
+4. Cuando indique que terminó, abre `run_sprint_analyzer.bat`.
+5. Introduce peso y estatura o déjalos en «Sin indicar». Carga el video y pulsa **Analizar video**.
+6. Al terminar, abre el informe o la carpeta de resultados desde la aplicación.
 
-### 📊 Visualización Profesional
-- **Gráficos Interactivos**: Perfiles de velocidad y ángulos
-- **Video con Overlays**: Visualización de poses detectadas
-- **Dashboard Completo**: Métricas organizadas por pestañas
-- **Reportes PDF**: Documentos profesionales con resultados
-- **Exportación de Datos**: CSV y JSON para análisis externo
+Los resultados se guardan por defecto en `Documentos/SprintBiomechPro/sesiones`. Puedes cambiar la carpeta desde la aplicación. Conserva esa carpeta al actualizar el programa. El perfil se guarda en la configuración local del usuario de Windows.
 
-### 🛠️ Tecnologías Avanzadas
-- **MediaPipe 0.10.5**: Detección de poses de última generación
-- **PyQt5**: Interfaz gráfica moderna y responsiva
-- **PyQtGraph**: Gráficos científicos en tiempo real
-- **OpenCV**: Procesamiento avanzado de video
-- **ReportLab**: Generación de PDF profesionales
-- **SciPy/NumPy**: Análisis matemático avanzado
+Si falta alguna dependencia o se produce un error, el lanzador mantiene abierta la consola para leerlo. Ejecuta nuevamente `install.bat` para reparar la instalación. Esta versión no es un ejecutable portátil: requiere Python y las dependencias.
 
-## 🚀 Instalación y Uso
+## Cómo grabar y seleccionar el video
 
-### Prerrequisitos
-- Python 3.11.9
-- Windows 10/11
-- Webcam o video de sprint
+- Usa cámara fija, vista lateral, buena iluminación y **un solo atleta visible**. El detector actual no permite seleccionar identidad entre varias personas; puede seguir a otra persona.
+- Procura mantener todo el cuerpo dentro del encuadre. Una detección visible no garantiza una medición precisa.
+- Usa la barra de vista previa para localizar el tramo útil. Inicio y final se expresan en **segundos de reproducción del archivo**. Final en cero significa todo el resto del video.
+- Si el archivo reproduce a 30 FPS pero fue grabado a 120 FPS y conserva todos esos fotogramas, indica 120 en FPS de captura. No adivines este valor. El video exportado conserva el ritmo de reproducción del archivo; los tiempos del CSV usan los FPS de captura indicados.
+- Introduce distancia únicamente si conoces los metros recorridos **durante el intervalo exacto**. No introduzcas 100 m si solo seleccionas unos segundos de la carrera.
+- El video incluido contiene varias personas y ~14.5 FPS: es una prueba técnica de procesamiento, no una validación biomecánica ni una medición fiable de contactos.
 
-### Instalación Automática
-```bash
-# Ejecutar el instalador
-instalar_proyecto.bat
+## Qué significan los resultados
+
+Los ángulos usan coordenadas en píxeles respetando la relación de aspecto del video. Los puntos con visibilidad inferior a 0.65, no finitos o fuera del encuadre se omiten. Cada métrica tiene su propio número de fotogramas válidos. Los datos ausentes son campos vacíos en CSV, `null` en JSON y `N/D` en la interfaz y el PDF; nunca se sustituyen por cero.
+
+La inclinación del tronco es el ángulo entre la línea caderas-hombros y la vertical de la imagen: depende de la orientación de la cámara. Las medias del intervalo completo mezclan fases de movimiento y **no son puntuaciones de técnica**. La cobertura no es una estimación de precisión.
+
+Peso y estatura se guardan como contexto del atleta. No modifican los ángulos, y no se usan para inventar fuerzas o potencia. Reacción, contactos, cadencia, longitud de zancada y velocidad máxima siguen **pendientes de implementación y validación**. El seguimiento de identidad entre múltiples atletas también está pendiente.
+
+## Línea de comandos
+
+Con el entorno activado:
+
+```console
+python -m src.cli video.mp4 --athlete "Atleta" --mass 75 --height 178 --output analysis_results
+python -m src.cli video.mp4 --start 2 --end 6 --capture-fps 120
 ```
 
-### Instalación Manual
-```bash
-# Crear entorno virtual
-python -m venv venv
-venv\Scripts\activate
+Los antiguos scripts `demo_completo.py`, `save_processed_video.py` y `test_pose_system.py` ahora llaman al mismo motor. Usan la sintaxis de argumentos anterior (`--output` para carpeta), sin resultados simulados ni evaluaciones arbitrarias de técnica.
 
-# Instalar dependencias
-pip install -r requirements.txt
+## Desarrollo y pruebas
+
+```console
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# Linux: source .venv/bin/activate
+python -m pip install -r requirements.txt pytest
+python -m pytest -q
 ```
 
-### 🎥 Uso con Tus Propios Videos
+Las pruebas de interfaz usan Qt `offscreen`. Consulta [el registro de validación](docs/VALIDATION.md) para distinguir comprobaciones realizadas de pruebas pendientes en Windows.
 
-#### 1. Ejecutar la Aplicación
-```bash
-python run_sprint_analyzer.py
-```
+## Arquitectura
 
-#### 2. Cargar Tu Video
-- **Formato soportado**: MP4, AVI, MOV
-- **Resolución recomendada**: 1080p o superior
-- **Contenido**: Sprint completo desde salida hasta meta
-- **Iluminación**: Buena luz, atleta completamente visible
-- **Ángulo**: Vista lateral (plano sagital)
+- `run_sprint_analyzer.py`: perfil, vista previa, control de estados y trabajador Qt.
+- `src/analysis.py`: validación, detección, métricas, cancelación y exportación atómica.
+- `src/cli.py`: interfaz de consola con el mismo motor.
+- `tests/`: regresiones de datos ausentes, geometría, exportación, errores, cancelación y estados de interfaz.
 
-**Pasos:**
-1. Haz clic en "📁 Cargar Video"
-2. Selecciona tu archivo de video
-3. Espera a que aparezca el preview con detección de poses
-
-#### 3. Análisis Automático
-- Presiona "⚡ Analizar Sprint"
-- Observa métricas actualizándose en tiempo real
-- Revisa las pestañas: Velocidad, Ángulos, Salida, Mejoras
-
-#### 4. Generar Reporte Profesional
-- Haz clic en "📄 Generar PDF"
-- Elige ubicación y nombre del archivo
-- Obtén reporte completo con todas las métricas
-
-#### 5. Exportar Datos para Análisis (NUEVO v2.1)
-- **CSV**: Compatible con Excel, SPSS, R
-- **JSON**: Para análisis programático avanzado
-- Datos incluyen: timestamps, ángulos, velocidad, aceleración, métricas por fase
-
-### 💡 Consejos para Mejores Resultados
-
-- **Iluminación**: Usa videos con buena luz natural o artificial
-- **Fondo**: Evita fondos complejos o con movimiento
-- **Estabilidad**: Mantén la cámara fija durante la grabación
-- **Distancia**: El atleta debe ocupar ~70% del frame
-- **Duración**: Incluye al menos 6-8 segundos de carrera
-
-### 📊 Qué Analiza Automáticamente
-
-#### Métricas Biomecánicas
-- **Velocidad máxima** y perfil de aceleración
-- **Ángulos articulares**: Cadera, rodilla, tronco
-- **Tiempo de reacción** desde señal de salida
-- **Frecuencia de pasos** y longitud de zancada
-- **Simetría bilateral** izquierda/derecha
-
-#### Puntuaciones Inteligentes
-- **Técnica (0-100)**: Calidad de forma y ejecución
-- **Potencia (0-100)**: Fuerza generada en salida
-- **Eficiencia (0-100)**: Economía de movimiento
-
-#### Recomendaciones Personalizadas
-- Sugerencias específicas basadas en tus métricas
-- Comparación con estándares profesionales
-- Planes de mejora técnica
-
-## 🎯 Ejemplos de Uso
-
-### Para Entrenadores
-```
-1. Graba sprint de atleta con smartphone
-2. Carga video en la aplicación
-3. Obtén análisis biomecánico detallado
-4. Genera PDF para compartir con atleta
-5. Rastrea progreso en sesiones siguientes
-```
-
-### Para Atletas
-```
-1. Graba tus propios entrenamientos
-2. Analiza técnica de salida y carrera
-3. Identifica áreas de mejora específicas
-4. Sigue recomendaciones para optimizar rendimiento
-5. Compara progreso semana a semana
-```
-
-### Para Investigación
-```
-1. Analiza múltiples atletas
-2. Compara técnicas entre diferentes niveles
-3. Genera reportes estandarizados
-4. Exporta datos para análisis estadístico
-5. Valida intervenciones de entrenamiento
-```
-
-## � Novedades Versión 2.1
-
-### ✨ Nuevas Características
-- **🧪 Análisis por Fases Específicas**: Evaluación detallada de cada segmento del sprint (salida, aceleración, velocidad máxima, mantenimiento)
-- **🏆 Comparativa con Élite**: Estándares basados en récords mundiales y atletas de élite
-- **📊 Exportación Avanzada**: Datos CSV/JSON para análisis externo (Excel, SPSS, R, Python)
-- **🔧 Instalador Mejorado**: Setup automático con verificación de dependencias
-- **📈 Recomendaciones Inteligentes**: Sugerencias específicas basadas en análisis por fases
-- **🎯 Evaluación de Fatiga**: Análisis de caída de velocidad en la fase final
-
-### 🔧 Mejoras Técnicas
-- **Requisitos consolidados**: Versiones exactas para compatibilidad garantizada
-- **Manejo de errores mejorado**: Mensajes más claros y opciones de respaldo
-- **Estructura modular**: Código más organizado y mantenible
-- **Documentación actualizada**: Guías completas para todas las nuevas funciones
-
-```
-SprintBiomechPro/
-├── run_sprint_analyzer.py      # 🚀 Aplicación principal
-├── install.bat                 # ⚙️ Instalador mejorado (v2.1)
-├── requirements.txt            # 📦 Dependencias consolidadas
-├── README.md                   # 📖 Documentación completa
-├── src/
-│   ├── __init__.py
-│   ├── analyzer.py             # 🔍 Análisis biomecánico básico
-│   ├── sprint_phase_analyzer.py # 🏃 Análisis por fases (NUEVO v2.1)
-│   ├── compare.py              # 📊 Comparación de análisis
-│   ├── config.py               # ⚙️ Configuración del sistema
-│   ├── gui.py                  # 🖥️ Interfaz gráfica principal
-│   ├── report.py               # 📄 Generación de reportes PDF
-│   ├── utils.py                # 🛠️ Utilidades + exportación CSV/JSON
-│   ├── video_annotator.py      # 🎬 Anotación de video
-│   └── gui/                    # 🖼️ Módulos de interfaz
-│       ├── sprint_dashboard.py # 📊 Dashboard principal
-│       └── __init__.py
-├── config/
-│   └── elite_standards.json    # 🏆 Estándares de élite (NUEVO v2.1)
-├── analysis_results/           # 💾 Resultados guardados
-├── examples/                   # 🎥 Videos de ejemplo
-├── venv/                       # 🐍 Entorno virtual Python
-└── *.mp4                       # 📹 Videos de usuario
-```
-
-## 🔧 Configuración
-
-### Variables de Entorno
-```bash
-# Configuración opcional
-export SPRINT_ANALYZER_DEBUG=1
-export SPRINT_ANALYZER_MAX_FPS=30
-```
-
-### Configuración de MediaPipe
-- **Modo**: Imagen estática/dinámica
-- **Complejidad**: 0-2 (0=rápido, 2=preciso)
-- **Confianza Mínima**: 0.5 (detección), 0.5 (tracking)
-
-## 📊 Métricas Analizadas
-
-### Velocidad y Aceleración
-- Perfil de velocidad completo
-- Aceleración máxima
-- Velocidad punta
-- Análisis de fatiga (caída de velocidad)
-
-### Ángulos Corporales
-- Ángulo de cadera
-- Ángulo de rodilla
-- Ángulo de tronco
-- Ángulos óptimos por fase
-
-### Técnica de Salida
-- Tiempo de reacción
-- Salida de tacos
-- Ángulos iniciales
-
-### Análisis por Fases (NUEVO v2.1)
-- **Fase de Salida (0-10m)**: Reacción y fuerza explosiva
-- **Aceleración (10-30m)**: Desarrollo de velocidad
-- **Velocidad Máxima (30-60m)**: Pico de rendimiento
-- **Mantenimiento (60-100m)**: Resistencia y fatiga
-
-### Puntuaciones Globales
-- **Técnica** (0-100): Calidad de forma
-- **Potencia** (0-100): Fuerza generada
-- **Eficiencia** (0-100): Economía de movimiento
-
-### Comparativa con Élite (NUEVO v2.1)
-- Estándares de atletas como Usain Bolt, Christian Coleman
-- Evaluación contra récords mundiales
-- Recomendaciones específicas por nivel
-
-## 🎯 Recomendaciones del Sistema
-
-El sistema proporciona recomendaciones personalizadas basadas en:
-- Tiempos de reacción (< 150ms = excelente)
-- Perfiles de velocidad
-- Ángulos articulares óptimos
-- Técnica de zancada
-
-## 🐛 Solución de Problemas
-
-### MediaPipe no Detecta Poses
-- Verifica iluminación del video
-- Asegura que el atleta sea visible completamente
-- Prueba con videos de mejor calidad
-
-### Error de Memoria
-- Reduce resolución del video
-- Cierra otras aplicaciones
-- Aumenta RAM del sistema
-
-### GUI no Responde
-- Verifica instalación de PyQt5
-- Actualiza drivers gráficos
-- Ejecuta como administrador
-
-## 📈 Rendimiento
-
-### Requisitos Mínimos
-- **CPU**: Intel i5 o equivalente
-- **RAM**: 8GB
-- **GPU**: Opcional (acelera MediaPipe)
-- **Almacenamiento**: 2GB libres
-
-### Rendimiento Típico
-- **Análisis**: 2-5 segundos por video
-- **Detección**: 30 FPS en tiempo real
-- **PDF**: < 1 segundo
-
-## 🤝 Contribuciones
-
-### Desarrollo
-1. Fork el repositorio
-2. Crea rama feature (`git checkout -b feature/nueva-funcion`)
-3. Commit cambios (`git commit -am 'Agrega nueva función'`)
-4. Push (`git push origin feature/nueva-funcion`)
-5. Abre Pull Request
-
-### Reportar Bugs
-- Usa GitHub Issues
-- Incluye video de ejemplo
-- Describe pasos para reproducir
-- Adjunta logs de error
-
-## 📄 Licencia
-
-Este proyecto está bajo la Licencia MIT. Ver archivo LICENSE para detalles.
-
-## 🙏 Agradecimientos
-
-- **Google MediaPipe**: Por la tecnología de detección de poses
-- **PyQt5 Community**: Por el framework de GUI
-- **SciPy Ecosystem**: Por las bibliotecas científicas
-
-## 📞 Contacto
-
-Para soporte técnico o consultas:
-- Email: support@sprintbiomech.com
-- GitHub Issues: [Reportar problema](https://github.com/your-repo/issues)
-- Documentación: [Wiki](https://github.com/your-repo/wiki)
-
----
-
-**Versión**: 2.0
-**Última actualización**: Diciembre 2024
-**Compatibilidad**: Windows 10/11, Python 3.11+
-
-## 📋 Requisitos del Sistema
-
-- **Python**: 3.8+
-- **RAM**: 8GB mínimo
-- **GPU**: Recomendado para procesamiento en tiempo real
-- **OS**: Windows 10+, macOS 10.15+, Linux
-
-## 🛠️ Instalación
-
-1. **Clonar o descargar el proyecto**
-2. **Crear entorno virtual**:
-   ```bash
-   python -m venv venv
-   ```
-3. **Activar entorno**:
-   ```bash
-   # Windows
-   venv\Scripts\activate
-   # Linux/Mac
-   source venv/bin/activate
-   ```
-4. **Instalar dependencias**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-## 🎮 Uso
-
-### Ejecución Rápida (Windows)
-```bash
-run_sprint_analyzer.bat
-```
-
-### Ejecución Manual
-```bash
-python run_sprint_analyzer.py
-```
-
-### Flujo de Análisis
-1. **Cargar video**: Seleccionar video de sprint 100m
-2. **Análisis automático**: El sistema procesa todas las fases
-3. **Visualización**: Métricas en tiempo real y gráficos
-4. **Reporte**: Recomendaciones técnicas específicas
-
-## 📊 Métricas Analizadas
-
-### Salida de Tacos
-- Tiempo de reacción (ideal: <150ms)
-- Ángulos de set position (cadera: 90-110°, rodilla: 120-140°)
-- Potencia explosiva
-- Eficiencia de transición
-
-### Carrera
-- Velocidad máxima (élite: 11.5-12.0 m/s)
-- Frecuencia de pasos (4.8-5.0 Hz)
-- Longitud de paso (2.4-2.5 m)
-- Ángulos de zancada
-- Simetría izquierda-derecha
-
-## 🎯 Sistema de Puntuación
-
-- **0-20 puntos**: Tiempo de reacción
-- **0-30 puntos**: Velocidad máxima
-- **0-50 puntos**: Técnica general
-- **Total: 0-100 puntos**
-
-## 🔬 Tecnologías Utilizadas
-
-- **MediaPipe**: Detección de pose y landmarks
-- **OpenCV**: Procesamiento de video
-- **PyQt5**: Interfaz gráfica profesional
-- **PyQtGraph**: Gráficos en tiempo real
-- **NumPy/SciPy**: Cálculos matemáticos
-- **FilterPy**: Filtros Kalman para suavizado
-
-## 📈 Comparativas con Élite
-
-El sistema incluye estándares de atletas de élite:
-
-- **Masculino**: Usain Bolt, Christian Coleman
-- **Femenino**: Florence Griffith-Joyner, Shelly-Ann Fraser-Pryce
-
-Comparativas automáticas para identificar gaps de rendimiento.
-
-## 🎓 Recomendaciones Técnicas
-
-Sistema inteligente que genera recomendaciones específicas:
-
-- **Tiempo de reacción alto**: Entrenamiento con señales auditivas
-- **Salida lenta**: Ejercicios pliométricos
-- **Velocidad baja**: Trabajo con sobrecargas
-- **Frecuencia baja**: Ejercicios de skiping
-
-## 🔧 Configuración Avanzada
-
-### Archivo `config/sprint_standards.yaml`
-```yaml
-sprint_100m_standards:
-  elite_male:
-    reaction_time: 0.120-0.150
-    max_velocity: 11.5-12.0
-    step_frequency: 4.8-5.0
-  # ... más estándares
-```
-
-### Parámetros de MediaPipe
-- `model_complexity: 2` (máxima precisión)
-- `min_detection_confidence: 0.8`
-- `min_tracking_confidence: 0.8`
-
-## 📝 Notas de Desarrollo
-
-- Arquitectura modular para fácil extensión
-- Procesamiento en tiempo real posible
-- Soporte para múltiples cámaras
-- Exportación de datos a CSV/Excel
-
-## 🤝 Contribución
-
-Para contribuir al proyecto:
-
-1. Fork el repositorio
-2. Crear rama feature: `git checkout -b feature/nueva-funcionalidad`
-3. Commit cambios: `git commit -m 'Añade nueva funcionalidad'`
-4. Push: `git push origin feature/nueva-funcionalidad`
-5. Crear Pull Request
-
-## 📄 Licencia
-
-Este proyecto está bajo la Licencia MIT. Ver archivo `LICENSE` para más detalles.
-
-## 📞 Soporte
-
-Para soporte técnico o consultas:
-- Crear issue en GitHub
-- Email: support@sprintbiomech.com
-
----
-
-**Desarrollado con ❤️ para atletas, entrenadores y científicos del deporte**
+Los archivos `reporte_sprint.pdf` y `# Code Citations.md` en la raíz son históricos y no validan esta versión. Los informes actuales se generan por sesión.
