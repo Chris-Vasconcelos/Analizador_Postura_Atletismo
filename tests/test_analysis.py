@@ -75,7 +75,8 @@ def test_complete_session_exports_and_no_fake_metrics(video, tmp_path):
     assert result['mean_speed_m_s'] == pytest.approx(10.)
     assert result['warnings']
     assert result['summary']['knee_right']['mean_deg'] is None
-    saved = json.loads((folder/'sesion.json').read_text())
+    saved = json.loads((folder/'sesion.json').read_text(encoding='utf-8'))
+    assert saved['config']['athlete'] == 'José <Atleta>'
     assert saved['config']['mass_kg'] == 75
     with (folder/'fotogramas.csv').open(encoding='utf-8-sig') as handle:
         rows = list(csv.DictReader(handle))
