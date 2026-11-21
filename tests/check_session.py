@@ -1,7 +1,9 @@
 """Verify real CLI exports on CI and after a container execution."""
 import csv
 import json
+from math import isclose, isfinite
 from pathlib import Path
+from statistics import fmean
 import sys
 
 import cv2
@@ -16,9 +18,34 @@ def check_session(root, expected_frames=None):
     assert count > 0
     if expected_frames is not None:
         assert count == expected_frames
-    assert any(metric['valid_frames'] > 0 for metric in result['summary'].values())
+    fps = result['analysis_fps']
+    assert isfinite(fps) and fps > 0
+    assert isclose(result['duration_s'], count / fps)
+    distance = result['config']['distance_m']
+    speed = result['mean_speed_m_s']
+    if distance is None:
+        assert speed is None
+    else:
+        assert isclose(speed, distance / result['duration_s']) and speed > 0
+
+    summary = result['summary']
+    assert any(metric['valid_frames'] > 0 for metric in summary.values())
     with (session / 'fotogramas.csv').open(encoding='utf-8-sig', newline='') as source:
-        assert sum(1 for _ in csv.DictReader(source)) == count
+        reader = csv.DictReader(source)
+        assert reader.fieldnames == ['frame', 'time_s', 'file_time_s', *summary]
+        rows = list(reader)
+    assert len(rows) == count
+    for index, row in enumerate(rows):
+        assert isclose(float(row['time_s']), index / fps)
+    for key, metric in summary.items():
+        values = [float(row[key]) for row in rows if row[key] != '']
+        assert all(0 <= value <= 180 for value in values), key
+        assert metric['valid_frames'] == len(values), key
+        assert isclose(metric['coverage_pct'], 100 * len(values) / count), key
+        if values:
+            assert isclose(metric['mean_deg'], fmean(values), abs_tol=1e-9), key
+        else:
+            assert metric['mean_deg'] is None, key
     assert (session / 'informe.pdf').read_bytes().startswith(b'%PDF-')
     cap = cv2.VideoCapture(str(session / 'video_anotado.mp4'))
     try:

@@ -1,5 +1,6 @@
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+import json
 from pathlib import Path
 import time
 
@@ -109,17 +110,27 @@ def test_cancel_leaves_no_export(window, tmp_path, monkeypatch):
     assert not w.btn_export.isEnabled()
 
 
-def test_success_and_reload_clears_stale_results(window, tmp_path, monkeypatch):
+@pytest.mark.parametrize('distance', [0, 2])
+def test_success_and_reload_clears_stale_results(window, tmp_path, monkeypatch, distance):
     from src.analysis import analyze_video
     from tests.test_analysis import NoPose
     app, w = window
     monkeypatch.setattr(ui, 'analyze_video', lambda *a, **k: analyze_video(*a, **k, detector_factory=NoPose))
     path = make_video(tmp_path)
     w.load_path(path)
+    w.distance.setValue(distance)
     w.run_analysis()
     wait_finished(app, w)
     assert w.btn_export.isEnabled() and w.btn_pdf.isEnabled()
     assert Path(w.output_folder, 'informe.pdf').exists()
     assert w.table.item(0, 1).text() == 'N/D'
+    saved = json.loads(Path(w.output_folder, 'sesion.json').read_text(encoding='utf-8'))
+    if distance:
+        assert saved['config']['distance_m'] == distance
+        assert saved['mean_speed_m_s'] == pytest.approx(10)
+        assert 'según distancia declarada: 10.00 m/s' in w.result_label.text()
+    else:
+        assert saved['mean_speed_m_s'] is None
+        assert 'm/s' not in w.result_label.text()
     w.load_path(path)
     assert w.result is None and not w.btn_export.isEnabled()

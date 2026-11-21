@@ -109,8 +109,10 @@ class ModernSprintDashboard(QMainWindow):
         fields.addRow('Inicio del archivo', self.start)
         fields.addRow('Final del archivo', self.end)
         fields.addRow('FPS de captura', self.fps)
-        fields.addRow('Distancia recorrida', self.distance)
-        hint = QLabel('En cámara lenta, indica los FPS de grabación solo si los conoces. La distancia debe corresponder exactamente al intervalo seleccionado; permite calcular únicamente velocidad media.')
+        fields.addRow('Distancia declarada', self.distance)
+        hint = QLabel('Introduce la distancia solo si conoces los metros recorridos en ese intervalo. '
+                      'La velocidad media usa esa distancia y la duración calculada con los FPS. '
+                      'Para cámara lenta, indica los FPS de captura si los conoces.')
         hint.setWordWrap(True)
         fields.addRow(hint)
         side.addWidget(interval)

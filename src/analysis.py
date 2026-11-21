@@ -47,7 +47,7 @@ LIMITATIONS = (
     'La cobertura indica detecciones utilizables, no precisión biomecánica. '
     'Peso y estatura son datos del perfil; no permiten deducir fuerzas de este video. '
     'Reacción, contactos, cadencia, potencia y velocidad máxima: no disponibles. '
-    'La velocidad media, si se proporciona distancia, usa la distancia declarada y el intervalo seleccionado.'
+    'La velocidad media se calcula con la distancia declarada y la duración del intervalo según los FPS usados.'
 )
 
 @dataclass(frozen=True)
@@ -232,7 +232,7 @@ def write_exports(folder, result, rows):
                          ('Video', Path(result['video']).name), ('Fotogramas analizados', len(rows)),
                          ('Duración analizada (s)', round(result['duration_s'], 3)),
                          ('FPS del archivo', result['source_fps']), ('FPS de captura usados', result['analysis_fps']),
-                         ('Velocidad media declarada (m/s)', result['mean_speed_m_s'])]:
+                         ('Velocidad media según distancia declarada (m/s)', result['mean_speed_m_s'])]:
         content.append(Paragraph(f'{label}: {escape(str(value if value is not None else "No disponible"))}', styles['Normal']))
     content.append(Spacer(1, 16))
     table = [['Métrica 2D', 'Media (°)', 'Cobertura']]

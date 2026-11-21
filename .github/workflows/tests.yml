@@ -33,7 +33,7 @@ jobs:
       - run: python -m pytest -q
       - name: Run the CLI with real MediaPipe inference and check its exports
         run: |
-          python -m src.cli VID-20251210-WA0139_1.mp4 --end 1 --output smoke-results
+          python -m src.cli VID-20251210-WA0139_1.mp4 --end 1 --distance 1 --output smoke-results
           python -m tests.check_session smoke-results
       - name: Compile the Azure job template without an Azure account
         if: runner.os == 'Linux'
