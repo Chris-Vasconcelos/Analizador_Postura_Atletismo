@@ -35,6 +35,17 @@ jobs:
         run: |
           python -m src.cli VID-20251210-WA0139_1.mp4 --end 1 --output smoke-results
           python -m tests.check_session smoke-results
+      - name: Compile the Azure job template without an Azure account
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          bicep_executable="$RUNNER_TEMP/bicep"
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/Azure/bicep/releases/download/v0.49.2/bicep-linux-x64 \
+            --output "$bicep_executable"
+          echo "0ab9de90c2493f206f8281bae74f9ee2d5ed3605548dab1adf41fef185e1f7c5  $bicep_executable" | sha256sum --check
+          chmod +x "$bicep_executable"
+          "$bicep_executable" build --no-restore infra/azure/analysis-job.bicep --outfile "$RUNNER_TEMP/analysis-job.json"
       - name: Build the analysis container
         if: runner.os == 'Linux'
         run: docker build --platform linux/amd64 -t sprint-biomech:ci .
