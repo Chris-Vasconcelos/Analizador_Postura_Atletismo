@@ -2,7 +2,7 @@
 
 Aplicación de escritorio para revisar videos de sprint, medir ángulos **proyectados en 2D** y guardar una sesión reproducible. Diseñada para Windows 10/11 y Python 3.11 o 3.12 de 64 bits. No requiere GPU.
 
-Esta rama es una **beta técnica** de análisis de postura en video. El [estado de los requisitos de la versión 2.1](docs/REQUISITOS-2.1.md) detalla qué funciones se pueden probar hoy y cuáles requieren desarrollo o validación.
+El [estado de los requisitos de la versión 2.1](docs/REQUISITOS-2.1.md) detalla las funciones disponibles y las mediciones que requieren desarrollo o validación.
 
 ## Qué funciona en esta versión
 
@@ -17,13 +17,13 @@ Esta rama es una **beta técnica** de análisis de postura en video. El [estado 
 - Exportación conjunta: `video_anotado.mp4`, `fotogramas.csv`, `sesion.json` e `informe.pdf`.
 - Una carpeta única por sesión; las sesiones canceladas o fallidas no se publican como resultados completos.
 
-## Probar en Windows
+## Instalar y usar en Windows
 
-1. Descarga el ZIP de **esta rama** desde GitHub (`Code → Download ZIP`) y extráelo en una carpeta nueva. Conserva tu instalación anterior y tus sesiones mientras pruebas esta beta. Usa un video propio para la primera prueba.
+1. Descarga el ZIP de esta rama desde GitHub (`Code → Download ZIP`) y extráelo en una carpeta nueva. Conserva tus sesiones al actualizar.
 2. Instala Python **3.12 de 64 bits** (o 3.11), incluido el lanzador `py`, si aún no lo tienes.
 3. Abre `install.bat`. Instala las dependencias en `.venv` dentro de esta carpeta; requiere Internet.
 4. Cuando indique que terminó, abre `run_sprint_analyzer.bat`.
-5. Introduce peso y estatura o déjalos en «Sin indicar». Carga el video y pulsa **Analizar video**.
+5. Introduce peso y estatura o déjalos en «Sin indicar». Carga tu video y pulsa **Analizar video**.
 6. Al terminar, abre el informe o la carpeta de resultados desde la aplicación.
 
 Los resultados se guardan por defecto en `Documentos/SprintBiomechPro/sesiones`. Puedes cambiar la carpeta desde la aplicación. Conserva esa carpeta al actualizar el programa. El perfil se guarda en la configuración local del usuario de Windows.
@@ -55,8 +55,6 @@ Con el entorno activado:
 python -m src.cli video.mp4 --athlete "Atleta" --mass 75 --height 178 --output analysis_results
 python -m src.cli video.mp4 --start 2 --end 6 --capture-fps 120
 ```
-
-Los antiguos scripts `demo_completo.py`, `save_processed_video.py` y `test_pose_system.py` ahora llaman al mismo motor. Usan la sintaxis de argumentos anterior (`--output` para carpeta), sin resultados simulados ni evaluaciones arbitrarias de técnica.
 
 ## Desarrollo y pruebas
 
