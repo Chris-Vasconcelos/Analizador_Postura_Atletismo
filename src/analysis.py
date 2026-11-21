@@ -1,4 +1,5 @@
 """Single-pass video analysis. Missing observations stay missing, never zero."""
+from contextlib import ExitStack
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -6,6 +7,7 @@ import csv
 import json
 import math
 import shutil
+import sys
 import tempfile
 from uuid import uuid4
 
@@ -89,6 +91,14 @@ def inspect_video(path):
                 'width': frame.shape[1], 'height': frame.shape[0]}, frame
     finally:
         cap.release()
+
+
+def skip_frames(cap, count, cancelled=None):
+    for _ in range(count):
+        if cancelled and cancelled():
+            raise AnalysisCancelled()
+        if not cap.grab():
+            raise ValueError('No se pudo leer el inicio seleccionado.')
 
 
 def angle(a, b, c):
@@ -243,8 +253,11 @@ def analyze_video(video_path, config, output_root, progress=None, cancelled=None
     source_fps = info['fps']
     fps = config.capture_fps or source_fps
     # UI interval uses the FILE playback timeline, even for slow-motion files.
+    if config.start_s >= info['duration']:
+        raise ValueError('El intervalo seleccionado está fuera del video.')
     start = int(round(config.start_s * source_fps))
-    end = min(info['frames'], int(round(config.end_s * source_fps))) if config.end_s is not None else info['frames']
+    end_s = config.end_s if config.end_s is not None else info['duration']
+    end = min(info['frames'], int(round(min(end_s, info['duration']) * source_fps)))
     if start >= end:
         raise ValueError('El intervalo seleccionado está fuera del video.')
     root = Path(output_root)
@@ -253,8 +266,11 @@ def analyze_video(video_path, config, output_root, progress=None, cancelled=None
     cap, writer, detector = None, None, None
     try:
         cap = cv2.VideoCapture(str(video_path))
-        if not cap.isOpened() or (start and not cap.set(cv2.CAP_PROP_POS_FRAMES, start)):
-            raise ValueError('No se pudo leer el inicio seleccionado.')
+        if not cap.isOpened():
+            raise ValueError('No se pudo abrir el video para analizarlo.')
+        # OpenCV can seek to the wrong frame in a variable-rate source.
+        # Decode up to the selected index without converting skipped frames to BGR.
+        skip_frames(cap, start, cancelled)
         writer = cv2.VideoWriter(str(stage / 'video_anotado.mp4'), cv2.VideoWriter_fourcc(*'mp4v'),
                                  source_fps, (info['width'], info['height']))
         if not writer.isOpened():
@@ -286,6 +302,8 @@ def analyze_video(video_path, config, output_root, progress=None, cancelled=None
             raise AnalysisCancelled()
         writer.release()
         writer = None
+        completed_detector, detector = detector, None
+        completed_detector.close()
         duration = len(rows) / fps
         summary = summarize(rows)
         warnings = []
@@ -307,11 +325,18 @@ def analyze_video(video_path, config, output_root, progress=None, cancelled=None
         stage.rename(destination)
         return result, str(destination)
     finally:
-        if cap is not None:
-            cap.release()
-        if writer is not None:
-            writer.release()
-        if detector is not None:
-            detector.close()
-        if stage.exists():
-            shutil.rmtree(stage)
+        original_error = sys.exception()
+        try:
+            with ExitStack() as cleanup:
+                if stage.exists():
+                    cleanup.callback(shutil.rmtree, stage)
+                if cap is not None:
+                    cleanup.callback(cap.release)
+                if writer is not None:
+                    cleanup.callback(writer.release)
+                if detector is not None:
+                    cleanup.callback(detector.close)
+        except Exception as cleanup_error:
+            if original_error is None:
+                raise
+            original_error.add_note(f'No se completó la limpieza de la sesión: {cleanup_error}')

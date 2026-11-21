@@ -140,6 +140,10 @@ def test_detector_error_releases_resources(video, tmp_path):
     class Broken(NoPose):
         def process(self, frame):
             raise RuntimeError('detector error')
+
+        def close(self):
+            super().close()
+            raise RuntimeError('cleanup error')
     detector = Broken()
     with pytest.raises(RuntimeError, match='detector error'):
         analyze_video(video, AnalysisConfig(), tmp_path/'sessions', detector_factory=lambda: detector)
@@ -150,6 +154,11 @@ def test_detector_error_releases_resources(video, tmp_path):
 def test_unreadable_and_out_of_range(video, tmp_path):
     with pytest.raises(ValueError):
         analyze_video(tmp_path/'missing.mp4', AnalysisConfig(), tmp_path/'sessions')
-    with pytest.raises(ValueError):
-        analyze_video(video, AnalysisConfig(start_s=100), tmp_path/'sessions')
+    with pytest.raises(ValueError, match='fuera del video'):
+        analyze_video(video, AnalysisConfig(start_s=1e308), tmp_path/'sessions')
     assert not (tmp_path/'sessions').exists()
+
+
+def test_end_after_video_is_clamped(video, tmp_path):
+    result, _ = analyze_video(video, AnalysisConfig(end_s=1e308), tmp_path/'sessions', detector_factory=NoPose)
+    assert result['processed_frames'] == 12

@@ -6,7 +6,8 @@ import time
 import cv2
 import numpy as np
 import pytest
-from PyQt5.QtCore import QSettings
+from PyQt5.QtCore import QSettings, Qt
+from PyQt5.QtTest import QTest
 from PyQt5.QtWidgets import QApplication
 
 import run_sprint_analyzer as ui
@@ -31,8 +32,8 @@ def window(tmp_path):
 def make_video(tmp_path):
     path = tmp_path/'input.avi'
     writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*'MJPG'), 30., (160, 120))
-    for _ in range(6):
-        writer.write(np.zeros((120, 160, 3), dtype=np.uint8))
+    for frame in range(6):
+        writer.write(np.full((120, 160, 3), frame * 40, dtype=np.uint8))
     writer.release()
     return str(path)
 
@@ -62,6 +63,32 @@ def test_error_does_not_turn_into_success(window, tmp_path, monkeypatch):
     assert w.btn_analyze.isEnabled() and not w.btn_export.isEnabled()
     assert w.settings.value('mass', type=float) == 75
     assert w.settings.value('height', type=float) == 178
+
+
+def test_seek_keyboard_updates_video_preview(window, tmp_path):
+    _, w = window
+    assert w.load_path(make_video(tmp_path))
+    original = w.video_frame.pixmap().toImage()
+    QTest.keyClick(w.seek, Qt.Key_End)
+    selected = w.video_frame.pixmap().toImage()
+    assert w.seek.value() == 5
+    assert selected.pixelColor(selected.width() // 2, selected.height() // 2).red() > 150
+    assert original != selected
+    assert w.seek_label.text() == 'Vista previa: 0.17 s'
+
+
+def test_invalid_saved_profile_does_not_prevent_startup(window, monkeypatch):
+    _, w = window
+    settings = w.settings
+    settings.setValue('mass', 'valor inválido')
+    settings.setValue('height', '177')
+    monkeypatch.setattr(ui, 'QSettings', lambda *args: settings)
+    dashboard = ui.ModernSprintDashboard()
+    try:
+        assert dashboard.mass.value() == 0
+        assert dashboard.height.value() == 177
+    finally:
+        dashboard.close()
 
 
 def test_cancel_leaves_no_export(window, tmp_path, monkeypatch):

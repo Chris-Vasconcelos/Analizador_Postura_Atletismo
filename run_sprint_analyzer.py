@@ -1,17 +1,19 @@
 """SprintBiomechPro desktop entry point (Windows 10/11, Python 3.11/3.12)."""
 from pathlib import Path
+import math
 import sys
+from time import monotonic
 
 import cv2
 import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtCore import Qt, QThread, QSettings, QStandardPaths, QUrl, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, QSettings, QSignalBlocker, QStandardPaths, QUrl, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap, QDesktopServices
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QFormLayout, QPushButton, QLabel, QFileDialog, QDoubleSpinBox, QLineEdit, QProgressBar,
     QScrollArea, QGroupBox, QTableWidget, QTableWidgetItem, QHeaderView, QSlider, QTabWidget)
 
-from src.analysis import AnalysisConfig, AnalysisCancelled, METRICS, analyze_video, inspect_video
+from src.analysis import AnalysisConfig, AnalysisCancelled, METRICS, analyze_video, inspect_video, skip_frames
 
 
 class AnalysisThread(QThread):
@@ -25,9 +27,18 @@ class AnalysisThread(QThread):
         self.video, self.config, self.output_root = video, config, output_root
 
     def run(self):
+        last_update = 0.0
+
+        def report_progress(frame, row, done, total):
+            nonlocal last_update
+            now = monotonic()
+            if done == total or now - last_update >= .1:
+                self.progress.emit(frame, row, done, total)
+                last_update = now
+
         try:
             result, folder = analyze_video(self.video, self.config, self.output_root,
-                progress=self.progress.emit, cancelled=self.isInterruptionRequested)
+                progress=report_progress, cancelled=self.isInterruptionRequested)
             self.succeeded.emit(result, folder)
         except AnalysisCancelled:
             self.cancelled.emit()
@@ -77,8 +88,8 @@ class ModernSprintDashboard(QMainWindow):
         self.athlete.setMaxLength(100)
         self.mass = self.number(0, 300, 0, ' kg', 'Sin indicar')
         self.height = self.number(0, 250, 0, ' cm', 'Sin indicar')
-        self.mass.setValue(float(self.settings.value('mass', 0)))
-        self.height.setValue(float(self.settings.value('height', 0)))
+        self.mass.setValue(self.saved_profile_number('mass'))
+        self.height.setValue(self.saved_profile_number('height'))
         form.addRow('Nombre', self.athlete)
         form.addRow('Peso', self.mass)
         form.addRow('Estatura', self.height)
@@ -130,6 +141,7 @@ class ModernSprintDashboard(QMainWindow):
         ml.addWidget(self.video_frame, 1)
         self.seek = QSlider(Qt.Horizontal)
         self.seek.setEnabled(False)
+        self.seek.setTracking(False)
         ml.addWidget(self.seek)
         self.seek_label = QLabel('Vista previa: 0.00 s')
         ml.addWidget(self.seek_label)
@@ -170,8 +182,7 @@ class ModernSprintDashboard(QMainWindow):
         self.btn_export.clicked.connect(self.open_output_folder)
         self.btn_pdf.clicked.connect(lambda: self.open_output_folder('informe.pdf'))
         self.btn_root.clicked.connect(self.choose_root)
-        self.seek.sliderReleased.connect(self.preview_at_slider)
-        self.seek.valueChanged.connect(lambda value: self.seek_label.setText(f'Vista previa: {value/1000:.2f} s'))
+        self.seek.valueChanged.connect(self.preview_at_slider)
         self.set_busy(False)
         self.clear_results()
 
@@ -186,6 +197,13 @@ class ModernSprintDashboard(QMainWindow):
             box.setSpecialValueText(special)
         return box
 
+    def saved_profile_number(self, key):
+        try:
+            value = float(self.settings.value(key, 0))
+        except (TypeError, ValueError, OverflowError):
+            return 0.0
+        return value if math.isfinite(value) else 0.0
+
     def set_busy(self, busy):
         for widget in (self.btn_load, self.btn_root, self.athlete, self.mass, self.height,
                        self.start, self.end, self.fps, self.distance):
@@ -199,6 +217,7 @@ class ModernSprintDashboard(QMainWindow):
     def clear_results(self):
         self.result, self.output_folder = None, None
         self.graph_x, self.graph_y = [], []
+        self.last_graph_frame = 0
         self.curve.setData([], [])
         self.progress_bar.setValue(0)
         self.result_label.setText('Sin resultados para el análisis actual.')
@@ -227,23 +246,39 @@ class ModernSprintDashboard(QMainWindow):
         self.end.setMaximum(info['duration'])
         self.fps.setValue(0)
         self.distance.setValue(0)
-        self.seek.setRange(0, max(0, int((info['frames']-1)/info['fps']*1000)))
-        self.seek.setValue(0)
+        self.preview_fps = info['fps']
+        with QSignalBlocker(self.seek):
+            self.seek.setRange(0, info['frames'] - 1)
+            self.seek.setValue(0)
+        self.seek_label.setText('Vista previa: 0.00 s')
         self.file_label.setText(f"{Path(path).name}\n{info['width']} × {info['height']} · {info['fps']:.2f} FPS · {info['duration']:.2f} s")
         self.update_image(frame)
         self.status_lbl.setText('Video listo. Revisa perfil e intervalo y pulsa Analizar video.')
         self.set_busy(False)
         return True
 
-    def preview_at_slider(self):
+    def preview_at_slider(self, frame_index):
         if not self.current_video:
             return
         cap = cv2.VideoCapture(self.current_video)
         try:
-            cap.set(cv2.CAP_PROP_POS_MSEC, self.seek.value())
-            ok, frame = cap.read()
+            ok = False
+            if frame_index == 0 or cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index):
+                ok, frame = cap.read()
+            if not ok and frame_index:
+                cap.release()
+                cap = cv2.VideoCapture(self.current_video)
+                try:
+                    skip_frames(cap, frame_index)
+                except ValueError:
+                    return
+                ok, frame = cap.read()
             if ok:
                 self.update_image(frame)
+                timestamp = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000
+                if not math.isfinite(timestamp) or timestamp <= 0:
+                    timestamp = frame_index / self.preview_fps
+                self.seek_label.setText(f'Vista previa: {timestamp:.2f} s')
         finally:
             cap.release()
 
@@ -279,9 +314,12 @@ class ModernSprintDashboard(QMainWindow):
     def on_progress(self, frame, row, done, total):
         self.update_image(frame)
         self.progress_bar.setValue(round(100 * done / total))
-        self.graph_x.append(row['time_s'])
-        self.graph_y.append(row['knee_right'] if row['knee_right'] is not None else np.nan)
-        self.curve.setData(self.graph_x, self.graph_y)
+        graph_step = max(1, (total + 999) // 1000)
+        if not self.graph_x or done == total or done - self.last_graph_frame >= graph_step:
+            self.graph_x.append(row['time_s'])
+            self.graph_y.append(row['knee_right'] if row['knee_right'] is not None else np.nan)
+            self.last_graph_frame = done
+            self.curve.setData(self.graph_x, self.graph_y)
         self.status_lbl.setText(f'Analizando fotograma {done} de {total}…')
 
     def on_success(self, result, folder):
