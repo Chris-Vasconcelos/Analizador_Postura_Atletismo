@@ -19,7 +19,7 @@ Esta rama es una **beta técnica** de análisis de postura en video. El [estado 
 
 ## Probar en Windows
 
-1. Descarga el ZIP de **esta rama** desde GitHub (`Code → Download ZIP`) y extráelo en una carpeta nueva. Si ya usas la aplicación, conserva tu carpeta de sesiones y no elimines la instalación anterior hasta probar esta.
+1. Descarga el ZIP de **esta rama** desde GitHub (`Code → Download ZIP`) y extráelo en una carpeta nueva. Conserva tu instalación anterior y tus sesiones mientras pruebas esta beta. Usa un video propio para la primera prueba.
 2. Instala Python **3.12 de 64 bits** (o 3.11), incluido el lanzador `py`, si aún no lo tienes.
 3. Abre `install.bat`. Instala las dependencias en `.venv` dentro de esta carpeta; requiere Internet.
 4. Cuando indique que terminó, abre `run_sprint_analyzer.bat`.
@@ -37,7 +37,7 @@ Si falta alguna dependencia o se produce un error, el lanzador mantiene abierta 
 - Usa la barra de vista previa para localizar el tramo útil. Inicio y final se expresan en segundos. Final en cero significa todo el resto del video. El motor convierte los tiempos usando los FPS medios del archivo. Para recortes y tiempos precisos, usa un video con FPS constantes.
 - Si el archivo reproduce a 30 FPS constantes pero fue grabado a 120 FPS y conserva todos esos fotogramas, indica 120 en FPS de captura. El MP4 anotado se escribe a los FPS medios del archivo. La columna `time_s` del CSV usa los FPS de captura indicados, si los hay.
 - Introduce distancia únicamente si conoces los metros recorridos **durante el intervalo exacto**. No introduzcas 100 m si solo seleccionas unos segundos de la carrera.
-- El video incluido contiene varias personas y ~14.5 FPS: es una prueba técnica de procesamiento, no una validación biomecánica ni una medición fiable de contactos.
+- El video histórico del clon Git contiene varias personas y ~14.5 FPS. Sirve como prueba técnica de procesamiento. El ZIP de distribución lo excluye mientras se verifica su procedencia.
 
 ## Qué significan los resultados
 
@@ -81,5 +81,7 @@ Las pruebas de interfaz usan Qt `offscreen`. Consulta [el registro de validació
 
 - [Auditoría técnica por etapas](docs/AUDITORIA.md) con hallazgos reproducidos y prioridades de validación.
 - [Ejecutar la CLI en Docker y preparar Azure](docs/AZURE.md) para procesar video en otra máquina y recuperar las cuatro exportaciones.
+- [Plan y criterios de aceptación](docs/PLAN.md) para pasar de la beta a una versión validada.
+- [Licencias y procedencia](docs/LICENCIAS.md) del proyecto, las dependencias y el material histórico.
 
 Los archivos `reporte_sprint.pdf` y `# Code Citations.md` en la raíz son históricos y no validan esta versión. Los informes actuales se generan por sesión.
