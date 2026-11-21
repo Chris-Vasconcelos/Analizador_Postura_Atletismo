@@ -1,0 +1,5 @@
+**
+!Dockerfile
+!requirements-analysis.txt
+!src/
+!src/*.py

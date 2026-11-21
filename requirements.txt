@@ -1,7 +1,4 @@
-# Tested runtime: Python 3.11 / 3.12, CPU. Only one OpenCV distribution.
-numpy==1.26.4
-opencv-contrib-python==4.11.0.86
-mediapipe==0.10.21
+# Desktop dependencies. The analysis engine is shared with the CLI container.
+-r requirements-analysis.txt
 PyQt5==5.15.11
 pyqtgraph==0.13.7
-reportlab==4.4.3

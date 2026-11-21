@@ -9,7 +9,8 @@ Aplicación de escritorio para revisar videos de sprint, medir ángulos **proyec
 - Desplazamiento por el video y selección del intervalo de análisis.
 - FPS de captura opcionales para archivos en cámara lenta.
 - Análisis MediaPipe en segundo plano con progreso y cancelación.
-- Ángulos de rodilla y cadera izquierda/derecha e inclinación del tronco, con cobertura por métrica.
+- Ángulos de ambas rodillas, caderas y codos e inclinación del tronco, con cobertura por métrica.
+- Panel y arcos que cambian con cada fotograma en `video_anotado.mp4` y aparecen en la vista previa durante el análisis.
 - Distancia recorrida opcional para calcular **velocidad media declarada** del intervalo; no se estima distancia desde píxeles.
 - Exportación conjunta: `video_anotado.mp4`, `fotogramas.csv`, `sesion.json` e `informe.pdf`.
 - Una carpeta única por sesión; las sesiones canceladas o fallidas no se publican como resultados completos.
@@ -31,8 +32,8 @@ Si falta alguna dependencia o se produce un error, el lanzador mantiene abierta 
 
 - Usa cámara fija, vista lateral, buena iluminación y **un solo atleta visible**. El detector actual no permite seleccionar identidad entre varias personas; puede seguir a otra persona.
 - Procura mantener todo el cuerpo dentro del encuadre. Una detección visible no garantiza una medición precisa.
-- Usa la barra de vista previa para localizar el tramo útil. Inicio y final se expresan en **segundos de reproducción del archivo**. Final en cero significa todo el resto del video.
-- Si el archivo reproduce a 30 FPS pero fue grabado a 120 FPS y conserva todos esos fotogramas, indica 120 en FPS de captura. No adivines este valor. El video exportado conserva el ritmo de reproducción del archivo; los tiempos del CSV usan los FPS de captura indicados.
+- Usa la barra de vista previa para localizar el tramo útil. Inicio y final se expresan en segundos. Final en cero significa todo el resto del video. El motor convierte los tiempos usando los FPS medios del archivo. Para recortes y tiempos precisos, usa un video con FPS constantes.
+- Si el archivo reproduce a 30 FPS constantes pero fue grabado a 120 FPS y conserva todos esos fotogramas, indica 120 en FPS de captura. El MP4 anotado se escribe a los FPS medios del archivo. La columna `time_s` del CSV usa los FPS de captura indicados, si los hay.
 - Introduce distancia únicamente si conoces los metros recorridos **durante el intervalo exacto**. No introduzcas 100 m si solo seleccionas unos segundos de la carrera.
 - El video incluido contiene varias personas y ~14.5 FPS: es una prueba técnica de procesamiento, no una validación biomecánica ni una medición fiable de contactos.
 
@@ -73,5 +74,10 @@ Las pruebas de interfaz usan Qt `offscreen`. Consulta [el registro de validació
 - `src/analysis.py`: validación, detección, métricas, cancelación y exportación atómica.
 - `src/cli.py`: interfaz de consola con el mismo motor.
 - `tests/`: regresiones de datos ausentes, geometría, exportación, errores, cancelación y estados de interfaz.
+
+## Auditoría y ejecución fuera de la laptop
+
+- [Auditoría técnica por etapas](docs/AUDITORIA.md) con hallazgos reproducidos y prioridades de validación.
+- [Ejecutar la CLI en Docker y preparar Azure](docs/AZURE.md) para procesar video en otra máquina y recuperar las cuatro exportaciones.
 
 Los archivos `reporte_sprint.pdf` y `# Code Citations.md` en la raíz son históricos y no validan esta versión. Los informes actuales se generan por sesión.
