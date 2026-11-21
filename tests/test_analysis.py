@@ -88,6 +88,45 @@ def test_complete_session_exports_and_no_fake_metrics(video, tmp_path):
     cap.release()
 
 
+def test_video_overlay_uses_the_same_frame_measurements_as_csv(video, tmp_path):
+    class MovingElbow(NoPose):
+        def __init__(self):
+            self.index = 0
+
+        def process(self, frame):
+            points = [SimpleNamespace(x=.5, y=.5, visibility=0.) for _ in range(33)]
+            for i, x, y in [(12, .72, .4), (14, .72, .65), (16, .90, .65)]:
+                points[i] = SimpleNamespace(x=x, y=y, visibility=1.)
+            if self.index:
+                points[16].x, points[16].y = .72, .90
+            if self.index == 2:
+                points[16].visibility = 0.
+            self.index += 1
+            return points
+
+    preview = []
+    _, folder = analyze_video(video, AnalysisConfig(end_s=.1), tmp_path / 'sessions',
+                              progress=lambda *args: preview.append(args), detector_factory=MovingElbow)
+    with (Path(folder) / 'fotogramas.csv').open(encoding='utf-8-sig') as handle:
+        rows = list(csv.DictReader(handle))
+    assert [float(row['elbow_right']) for row in rows[:2]] == pytest.approx([90, 180])
+    assert rows[2]['elbow_right'] == ''
+    assert preview[0][1]['elbow_right'] is None
+    assert preview[0][0][:, :55].any()
+    cap = cv2.VideoCapture(str(Path(folder) / 'video_anotado.mp4'))
+    try:
+        frames = []
+        for _ in rows:
+            ok, frame = cap.read()
+            assert ok
+            frames.append(frame)
+        # The first wrist is visible on the right. In the last frame the pose omits it.
+        assert frames[0][73:83, 138:150].max() > 70
+        assert frames[2][73:83, 138:150].max() < 30
+    finally:
+        cap.release()
+
+
 def test_cancel_removes_partial_session(video, tmp_path):
     detector = NoPose()
     with pytest.raises(AnalysisCancelled):

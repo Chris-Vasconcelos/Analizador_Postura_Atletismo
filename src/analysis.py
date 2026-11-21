@@ -16,7 +16,29 @@ METRICS = {
     'knee_right': 'Rodilla derecha', 'knee_left': 'Rodilla izquierda',
     'hip_right': 'Cadera derecha', 'hip_left': 'Cadera izquierda',
     'trunk': 'Inclinación del tronco',
+    'elbow_right': 'Codo derecho', 'elbow_left': 'Codo izquierdo',
 }
+JOINT_ANGLES = {
+    'knee_right': (24, 26, 28), 'knee_left': (23, 25, 27),
+    'hip_right': (12, 24, 26), 'hip_left': (11, 23, 25),
+    'elbow_right': (12, 14, 16), 'elbow_left': (11, 13, 15),
+}
+POSE_CONNECTIONS = (
+    (11, 12), (11, 23), (12, 24), (23, 24),
+    (11, 13), (13, 15), (12, 14), (14, 16),
+    (23, 25), (25, 27), (24, 26), (26, 28),
+    (27, 29), (29, 31), (31, 27), (28, 30), (30, 32), (32, 28),
+)
+POSE_JOINTS = {index for connection in POSE_CONNECTIONS for index in connection}
+OVERLAY_METRICS = (
+    ('trunk', 'Tronco', (100, 233, 255)),
+    ('knee_left', 'Rodilla izq.', (255, 226, 88)),
+    ('knee_right', 'Rodilla der.', (255, 152, 247)),
+    ('hip_left', 'Cadera izq.', (255, 226, 88)),
+    ('hip_right', 'Cadera der.', (255, 152, 247)),
+    ('elbow_left', 'Codo izq.', (255, 226, 88)),
+    ('elbow_right', 'Codo der.', (255, 152, 247)),
+)
 LIMITATIONS = (
     'Ángulos proyectados en 2D: requieren vista lateral, cámara estable y un solo atleta. '
     'La cobertura indica detecciones utilizables, no precisión biomecánica. '
@@ -77,32 +99,88 @@ def angle(a, b, c):
     return float(np.degrees(np.arccos(np.clip(np.dot(u, v) / norm, -1, 1))))
 
 
-def measure(landmarks, width, height, threshold):
-    values = dict.fromkeys(METRICS)
+def visible_points(landmarks, width, height, threshold):
     if landmarks is None:
-        return values
-    def point(i):
-        p = landmarks[i]
-        if (p.visibility < threshold or not all(math.isfinite(v) for v in (p.x, p.y, p.visibility))
-                or not 0 <= p.x <= 1 or not 0 <= p.y <= 1):
-            return None
-        return np.array([p.x * width, p.y * height])
-    for name, indices in {'knee_right': (24, 26, 28), 'knee_left': (23, 25, 27),
-                          'hip_right': (12, 24, 26), 'hip_left': (11, 23, 25)}.items():
-        pts = [point(i) for i in indices]
-        if all(p is not None for p in pts):
-            values[name] = angle(*pts)
-    pts = [point(i) for i in (11, 12, 23, 24)]
-    if all(p is not None for p in pts):
-        shoulders, hips = (pts[0] + pts[1]) / 2, (pts[2] + pts[3]) / 2
-        values['trunk'] = angle(shoulders, hips, hips + np.array([0., -1.]))
+        return {}
+    return {
+        i: np.array([p.x * width, p.y * height])
+        for i, p in enumerate(landmarks)
+        if math.isfinite(p.visibility) and p.visibility >= threshold
+        and 0 <= p.x <= 1 and 0 <= p.y <= 1
+    }
+
+
+def angle_segments(points):
+    segments = {
+        key: tuple(points[i] for i in indices)
+        for key, indices in JOINT_ANGLES.items()
+        if all(i in points for i in indices)
+    }
+    if all(i in points for i in (11, 12, 23, 24)):
+        shoulders = (points[11] + points[12]) / 2
+        hips = (points[23] + points[24]) / 2
+        segments['trunk'] = shoulders, hips, hips + np.array([0., -1.])
+    return segments
+
+
+def measure_segments(segments):
+    values = dict.fromkeys(METRICS)
+    for key, segment in segments.items():
+        values[key] = angle(*segment)
     return values
+
+
+def measure(landmarks, width, height, threshold):
+    return measure_segments(angle_segments(visible_points(landmarks, width, height, threshold)))
+
+
+def draw_overlay(frame, points, segments, row):
+    height, width = frame.shape[:2]
+    size = min(height, width)
+    scale = min(.68, size / 660)
+    line_width = max(1, round(size / 210))
+    pixels = {i: tuple(np.rint(p).astype(int)) for i, p in points.items()}
+    for start, end in POSE_CONNECTIONS:
+        if start in pixels and end in pixels:
+            cv2.line(frame, pixels[start], pixels[end], (235, 237, 243), line_width, cv2.LINE_AA)
+    for i in POSE_JOINTS & pixels.keys():
+        cv2.circle(frame, pixels[i], line_width + 1, (78, 143, 255), -1, cv2.LINE_AA)
+    for key, _, color in OVERLAY_METRICS:
+        if row[key] is None:
+            continue
+        a, center, c = segments[key]
+        ax, ay = a - center
+        cx, cy = c - center
+        heading_a = math.degrees(math.atan2(ay, ax))
+        heading_c = math.degrees(math.atan2(cy, cx))
+        sweep = (heading_c - heading_a + 180) % 360 - 180
+        start = heading_c if sweep < 0 else heading_a
+        radius = round(size * (.058 if key == 'trunk' else .041))
+        if radius > 0:
+            cv2.ellipse(frame, tuple(np.rint(center).astype(int)), (radius, radius),
+                        start, 0, row[key], color, line_width, cv2.LINE_AA)
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    lines = [(f"{row['time_s']:.3f} s | Angulos 2D", (245, 247, 250))]
+    for key, label, color in OVERLAY_METRICS:
+        value = 'N/D' if row[key] is None else f'{row[key]:.1f} deg'
+        lines.append((f'{label}  {value}', color))
+    line_height = max(1, round(30 * scale))
+    margin = max(1, round(16 * scale))
+    text_width = max(cv2.getTextSize(label, font, scale, 1)[0][0] for label, _ in lines)
+    panel = frame[margin:margin + len(lines) * line_height + margin,
+                  margin:margin + text_width + 2 * margin]
+    if panel.size:
+        cv2.addWeighted(panel, .28, np.full_like(panel, (26, 18, 13)), .72, 0, dst=panel)
+        for i, (label, color) in enumerate(lines, start=1):
+            cv2.putText(frame, label, (2 * margin, margin + i * line_height),
+                        font, scale, color, 1, cv2.LINE_AA)
 
 
 def summarize(rows):
     summary = {}
     for key in METRICS:
-        data = [r[key] for r in rows if r[key] is not None]
+        data = [r[key] for r in rows if r.get(key) is not None]
         summary[key] = {'mean_deg': float(np.mean(data)) if data else None,
                         'min_deg': min(data) if data else None, 'max_deg': max(data) if data else None,
                         'valid_frames': len(data), 'coverage_pct': 100 * len(data) / len(rows) if rows else 0}
@@ -119,9 +197,6 @@ class MediaPipeDetector:
     def process(self, frame):
         result = self.pose.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         landmarks = result.pose_landmarks
-        if landmarks:
-            self.mp.solutions.drawing_utils.draw_landmarks(
-                frame, landmarks, self.mp.solutions.pose.POSE_CONNECTIONS)
         return landmarks.landmark if landmarks else None
 
     def close(self):
@@ -196,12 +271,14 @@ def analyze_video(video_path, config, output_root, progress=None, cancelled=None
             scale = min(1., 960 / max(frame.shape[:2]))
             small = cv2.resize(frame, (max(1, round(frame.shape[1]*scale)), max(1, round(frame.shape[0]*scale))))
             landmarks = detector.process(small)
-            values = measure(landmarks, small.shape[1], small.shape[0], config.visibility)
+            points = visible_points(landmarks, small.shape[1], small.shape[0], config.visibility)
+            segments = angle_segments(points)
+            values = measure_segments(segments)
             row = {'frame': frame_index, 'time_s': (frame_index-start)/fps,
                    'file_time_s': frame_index/source_fps, **values}
             rows.append(row)
+            draw_overlay(small, points, segments, row)
             annotated = cv2.resize(small, (info['width'], info['height']))
-            cv2.putText(annotated, f"{row['time_s']:.3f} s", (15, 35), cv2.FONT_HERSHEY_SIMPLEX, .8, (0, 255, 255), 2)
             writer.write(annotated)
             if progress and (len(rows) % 3 == 0 or frame_index == end-1):
                 progress(small.copy(), row, len(rows), end-start)

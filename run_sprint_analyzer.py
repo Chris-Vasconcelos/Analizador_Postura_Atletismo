@@ -146,7 +146,7 @@ class ModernSprintDashboard(QMainWindow):
         self.result_label = QLabel('Los resultados aparecerán al completar el análisis.')
         self.result_label.setWordWrap(True)
         rl.addWidget(self.result_label)
-        self.table = QTableWidget(5, 3)
+        self.table = QTableWidget(len(METRICS), 3)
         self.table.setHorizontalHeaderLabels(['Métrica 2D', 'Media', 'Cobertura'])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
