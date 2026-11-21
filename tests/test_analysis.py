@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 import pytest
 
-from src.analysis import AnalysisCancelled, AnalysisConfig, analyze_video, angle, measure, summarize
+from src.analysis import METRICS, AnalysisCancelled, AnalysisConfig, analyze_video, angle, measure, summarize
 
 
 def landmarks():
@@ -78,9 +78,15 @@ def test_complete_session_exports_and_no_fake_metrics(video, tmp_path):
     saved = json.loads((folder/'sesion.json').read_text(encoding='utf-8'))
     assert saved['config']['athlete'] == 'José <Atleta>'
     assert saved['config']['mass_kg'] == 75
+    assert list(saved['summary']) == list(METRICS)
+    assert all(metric['mean_deg'] is None for metric in saved['summary'].values())
+    assert {'contacts', 'reaction_time_ms', 'splits'}.isdisjoint(saved)
     with (folder/'fotogramas.csv').open(encoding='utf-8-sig') as handle:
-        rows = list(csv.DictReader(handle))
-    assert len(rows) == 6 and rows[0]['knee_right'] == ''
+        reader = csv.DictReader(handle)
+        assert reader.fieldnames == ['frame', 'time_s', 'file_time_s', *METRICS]
+        rows = list(reader)
+    assert len(rows) == 6
+    assert all(row[metric] == '' for row in rows for metric in METRICS)
     assert float(rows[-1]['time_s']) == pytest.approx(5/60)
     assert (folder/'informe.pdf').read_bytes().startswith(b'%PDF')
     cap = cv2.VideoCapture(str(folder/'video_anotado.mp4'))

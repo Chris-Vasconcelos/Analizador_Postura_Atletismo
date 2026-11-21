@@ -42,7 +42,8 @@ OVERLAY_METRICS = (
     ('elbow_right', 'Codo der.', (255, 152, 247)),
 )
 LIMITATIONS = (
-    'Ángulos proyectados en 2D: requieren vista lateral, cámara estable y un solo atleta. '
+    'Ángulos proyectados en 2D: para interpretarlos como estimaciones sagitales, '
+    'usa una cámara fija perpendicular al plano sagital del atleta y un solo atleta visible. '
     'La cobertura indica detecciones utilizables, no precisión biomecánica. '
     'Peso y estatura son datos del perfil; no permiten deducir fuerzas de este video. '
     'Reacción, contactos, cadencia, potencia y velocidad máxima: no disponibles. '
@@ -308,7 +309,7 @@ def analyze_video(video_path, config, output_root, progress=None, cancelled=None
         summary = summarize(rows)
         warnings = []
         if fps < 50:
-            warnings.append('Resolución temporal limitada: menos de 50 FPS. No interpretes contactos ni reacción a partir de estos datos.')
+            warnings.append('Resolución temporal limitada: menos de 50 FPS para la base de tiempo usada.')
         if not any(v['valid_frames'] for v in summary.values()):
             warnings.append('No se obtuvieron ángulos válidos. Revisa encuadre, iluminación y visibilidad del atleta.')
         elif min(v['coverage_pct'] for v in summary.values()) < 50:
