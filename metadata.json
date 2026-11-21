@@ -1,0 +1,7 @@
+{
+  "name": "Bolt Reboot - Sprint Biomechanics Pro",
+  "description": "Aplicación profesional de análisis biomecánico de sprint 100m con detección de pose MediaPipe, métricas articulares en tiempo real, análisis por fases y generación de reportes PDF/CSV/JSON.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
