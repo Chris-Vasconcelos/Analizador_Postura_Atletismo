@@ -78,6 +78,8 @@ def test_complete_session_exports_and_no_fake_metrics(video, tmp_path):
     saved = json.loads((folder/'sesion.json').read_text(encoding='utf-8'))
     assert saved['config']['athlete'] == 'José <Atleta>'
     assert saved['config']['mass_kg'] == 75
+    assert type(saved['mean_speed_m_s']) is float
+    assert saved['mean_speed_m_s'] == pytest.approx(10)
     assert list(saved['summary']) == list(METRICS)
     assert all(metric['mean_deg'] is None for metric in saved['summary'].values())
     assert {'contacts', 'reaction_time_ms', 'splits'}.isdisjoint(saved)
@@ -88,6 +90,8 @@ def test_complete_session_exports_and_no_fake_metrics(video, tmp_path):
     assert len(rows) == 6
     assert all(row[metric] == '' for row in rows for metric in METRICS)
     assert float(rows[-1]['time_s']) == pytest.approx(5/60)
+    assert float(rows[0]['file_time_s']) == pytest.approx(3/30)
+    assert float(rows[-1]['file_time_s']) == pytest.approx(8/30)
     assert (folder/'informe.pdf').read_bytes().startswith(b'%PDF')
     cap = cv2.VideoCapture(str(folder/'video_anotado.mp4'))
     assert int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) == 6
@@ -117,6 +121,13 @@ def test_video_overlay_uses_the_same_frame_measurements_as_csv(video, tmp_path):
         rows = list(csv.DictReader(handle))
     assert [float(row['elbow_right']) for row in rows[:2]] == pytest.approx([90, 180])
     assert rows[2]['elbow_right'] == ''
+    saved = json.loads(Path(folder, 'sesion.json').read_text(encoding='utf-8'))
+    elbow = saved['summary']['elbow_right']
+    assert type(elbow['mean_deg']) is float
+    assert (elbow['min_deg'], elbow['mean_deg'], elbow['max_deg']) == pytest.approx((90, 135, 180))
+    assert elbow['valid_frames'] == 2
+    assert elbow['coverage_pct'] == pytest.approx(200/3)
+    assert saved['summary']['elbow_left']['mean_deg'] is None
     assert preview[0][1]['elbow_right'] is None
     assert preview[0][0][:, :55].any()
     cap = cv2.VideoCapture(str(Path(folder) / 'video_anotado.mp4'))
