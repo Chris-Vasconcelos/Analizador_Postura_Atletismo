@@ -1,548 +1,334 @@
-import cv2
+"""SprintBiomechPro desktop entry point (Windows 10/11, Python 3.11/3.12)."""
+from pathlib import Path
 import sys
-import os
+
+import cv2
 import numpy as np
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QPushButton, QLabel, QFileDialog, QFrame)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QImage, QPixmap
-
-# Para gráfica en vivo
 import pyqtgraph as pg
+from PyQt5.QtCore import Qt, QThread, QSettings, QStandardPaths, QUrl, pyqtSignal
+from PyQt5.QtGui import QImage, QPixmap, QDesktopServices
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
+    QFormLayout, QPushButton, QLabel, QFileDialog, QDoubleSpinBox, QLineEdit, QProgressBar,
+    QScrollArea, QGroupBox, QTableWidget, QTableWidgetItem, QHeaderView, QSlider, QTabWidget)
 
-# --- IMPORTAMOS EL MOTOR PROFESIONAL AVANZADO ---
-from src.analyzer_profesional import BiomechSprintAnalyzer, AnalysisConfig
-from src.visualization import SprintVisualizer
+from src.analysis import AnalysisConfig, AnalysisCancelled, METRICS, analyze_video, inspect_video
 
 
-def mejorar_claridad_biomecanica(frame, apply_gamma=True):
-    """
-    Versión optimizada para laboratorios de alto rendimiento.
-    
-    Args:
-        frame: Frame en formato BGR
-        apply_gamma: Si True, aplica corrección gamma para mejor manejo de sombras
-    """
-    import cv2
-    import numpy as np
-    
-    # 1. Filtro Bilateral: Quita el 'ruido' de la cámara pero deja tus bordes nítidos
-    # Esto evita que MediaPipe 'tiemble'
-    frame = cv2.bilateralFilter(frame, 5, 75, 75)
-    
-    # 2. Convertir a HSV
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    h, s, v = cv2.split(hsv)
-    
-    # 3. CLAHE en el canal V (Brillo Inteligente)
-    # En lugar de sumar +20, esto redistribuye la luz de forma inteligente
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-    v = clahe.apply(v)
-    
-    # 3b. Corrección Gamma (opcional) - evita que sombras se pierdan
-    if apply_gamma:
-        v = np.power(v / 255.0, 0.9) * 255.0
-        v = v.astype(np.uint8)
-    
-    # 4. Aumentar saturación de forma segura
-    s = cv2.add(s, 30)
-    
-    hsv = cv2.merge([h, s, v])
-    return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-
-# --- HILO DE STREAMING EN VIVO ---
 class AnalysisThread(QThread):
-    change_pixmap_signal = pyqtSignal(np.ndarray)
-    metrics_signal = pyqtSignal(dict)
-    graph_signal = pyqtSignal(float, int)  # (knee_angle, frame_idx)
-    error_signal = pyqtSignal(str)
+    progress = pyqtSignal(object, object, int, int)
+    succeeded = pyqtSignal(object, str)
+    failed = pyqtSignal(str)
+    cancelled = pyqtSignal()
 
-    def __init__(self, video_path):
+    def __init__(self, video, config, output_root):
         super().__init__()
-        self.video_path = video_path
-
-    @staticmethod
-    def calculate_angle(a, b, c):
-        """Calcula ángulo entre 3 puntos (landmarks)."""
-        import numpy as np
-        import math
-        ang = math.degrees(math.atan2(c.y - b.y, c.x - b.x) - math.atan2(a.y - b.y, a.x - b.x))
-        ang = ang + 360 if ang < 0 else ang
-        return ang if ang < 180 else 360 - ang
+        self.video, self.config, self.output_root = video, config, output_root
 
     def run(self):
-        import cv2
-        import mediapipe as mp
         try:
-            print(f"[DEBUG] Iniciando análisis en vivo: {self.video_path}")
-            cap = cv2.VideoCapture(self.video_path)
-            
-            if not cap.isOpened():
-                self.error_signal.emit("No se pudo abrir el video")
-                return
-                
-            pose = mp.solutions.pose.Pose(model_complexity=2)
-            frame_idx = 0
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            print(f"[DEBUG] Total de frames: {total_frames}")
-            
-            while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                
-                # Optimización: redimensionar antes del procesamiento (más rápido)
-                # MediaPipe internamente usa ~256x256, así que no perdemos precisión
-                frame_small = cv2.resize(frame, (640, 360))
-                
-                # 1. Mejora Visual HSV en vivo (sobre imagen pequeña)
-                frame_preview = mejorar_claridad_biomecanica(frame_small)
-                
-                # Redimensionar de vuelta para mostrar al usuario
-                frame_preview = cv2.resize(frame_preview, (frame.shape[1], frame.shape[0]))
-                
-                rgb_frame = cv2.cvtColor(frame_preview, cv2.COLOR_BGR2RGB)
-                res = pose.process(rgb_frame)
-                
-                if res.pose_landmarks:
-                    # Dibujar esqueleto para feedback en vivo
-                    mp.solutions.drawing_utils.draw_landmarks(
-                        frame_preview, res.pose_landmarks, mp.solutions.pose.POSE_CONNECTIONS)
-                    
-                    l = res.pose_landmarks.landmark
-                    lm = mp.solutions.pose.PoseLandmark
-                    # Calcular ambos ángulos
-                    ang_r = self.calculate_angle(l[lm.RIGHT_HIP], l[lm.RIGHT_KNEE], l[lm.RIGHT_ANKLE])
-                    ang_l = self.calculate_angle(l[lm.LEFT_HIP], l[lm.LEFT_KNEE], l[lm.LEFT_ANKLE])
-                    
-                    # Emitir métricas y gráfica
-                    self.metrics_signal.emit({
-                        'knee_r': ang_r, 
-                        'knee_l': ang_l,
-                        'status': f"Trackeando... Frame {frame_idx}/{total_frames}"
-                    })
-                    self.graph_signal.emit(float(ang_r), int(frame_idx))
-                else:
-                    self.metrics_signal.emit({'status': f"Sin detección - Frame {frame_idx}"})
-                
-                # Enviar frame mejorado con skeleton
-                self.change_pixmap_signal.emit(frame_preview)
-                frame_idx += 1
-                
-            cap.release()
-            print(f"[DEBUG] Análisis en vivo completado. Frames procesados: {frame_idx}")
-            self.metrics_signal.emit({'status': "Finalizado ✅"})
-            
-        except Exception as e:
-            print(f"[ERROR] Error en hilo de análisis: {e}")
-            import traceback
-            traceback.print_exc()
-            self.error_signal.emit(str(e))
+            result, folder = analyze_video(self.video, self.config, self.output_root,
+                progress=self.progress.emit, cancelled=self.isInterruptionRequested)
+            self.succeeded.emit(result, folder)
+        except AnalysisCancelled:
+            self.cancelled.emit()
+        except Exception as exc:
+            self.failed.emit(f'{type(exc).__name__}: {exc}')
 
 
 class ModernSprintDashboard(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Bolt Reboot - Laboratorio Biomecánico")
-        self.resize(1200, 750)
-        # --- DISEÑO (QSS) ---
-        self.setStyleSheet("""
-            QMainWindow { background-color: #0F172A; }
-            QLabel { color: #F8FAFC; font-family: 'Segoe UI', Arial; }
-            QFrame#sidebar { background-color: #1E293B; border-right: 2px solid #334155; }
-            QFrame#metricCard { background-color: #1E293B; border-radius: 12px; border: 1px solid #334155; }
-            QPushButton {
-                background-color: #3B82F6; color: white; border: none;
-                padding: 12px 20px; border-radius: 8px; font-weight: bold; font-size: 14px;
-            }
-            QPushButton:hover { background-color: #2563EB; }
-            QPushButton#analyzeBtn { background-color: #10B981; font-size: 16px; }
-            QPushButton#analyzeBtn:hover { background-color: #059669; }
-            QPushButton#exportBtn { background-color: #475569; }
-            QPushButton#exportBtn:hover { background-color: #64748B; }
-        """)
-
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
-        main_layout = QHBoxLayout(main_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-
-        # --- BARRA LATERAL ---
-        sidebar = QFrame()
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(300)
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(25, 40, 25, 40)
-        sidebar_layout.setSpacing(20)
-
-        title_lbl = QLabel("⚡ BOLT REBOOT")
-        title_lbl.setStyleSheet("font-size: 26px; font-weight: 900; color: #38BDF8; margin-bottom: 10px;")
-        subtitle_lbl = QLabel("Sprint Biomechanics Pro v2.0")
-        subtitle_lbl.setStyleSheet("font-size: 12px; color: #64748B; margin-bottom: 30px;")
-
-        self.btn_load = QPushButton("📂 CARGAR VIDEO")
-        self.btn_analyze = QPushButton("⚡ ANALIZAR")
-        self.btn_analyze.setObjectName("analyzeBtn")
-        self.btn_export = QPushButton("📊 REPORTE FINAL")
-        self.btn_export.setObjectName("exportBtn")
-        self.status_lbl = QLabel("Sistema listo.")
-        self.status_lbl.setStyleSheet("color: #10B981; font-weight: bold; font-size: 13px;")
-
-        sidebar_layout.addWidget(title_lbl)
-        sidebar_layout.addWidget(subtitle_lbl)
-        sidebar_layout.addWidget(self.btn_load)
-        sidebar_layout.addWidget(self.btn_analyze)
-        sidebar_layout.addWidget(self.btn_export)
-        sidebar_layout.addStretch()
-        sidebar_layout.addWidget(self.status_lbl)
-
-        # --- ÁREA CENTRAL ---
-        content_area = QWidget()
-        content_layout = QVBoxLayout(content_area)
-        content_layout.setContentsMargins(40, 40, 40, 40)
-        content_layout.setSpacing(25)
-
-        header_lbl = QLabel("Monitor Cinemático")
-        header_lbl.setStyleSheet("font-size: 22px; font-weight: bold;")
-
-        self.video_frame = QLabel("SISTEMA LISTO: CARGA UN VIDEO")
-        self.video_frame.setMinimumSize(800, 450)
+        self.setWindowTitle('SprintBiomechPro · Análisis de sprint')
+        self.resize(1180, 780)
+        self.settings = QSettings('SprintBiomechPro', 'Desktop')
+        self.thread = None
+        self.current_video = None
+        self.output_folder = None
+        self.result = None
+        self.graph_x, self.graph_y = [], []
+        self.setStyleSheet('''
+            QMainWindow, QWidget { background: #0f172a; color: #e2e8f0; font-size: 13px; }
+            QGroupBox { border: 1px solid #334155; border-radius: 8px; margin-top: 14px; padding: 14px 8px 8px; }
+            QGroupBox::title { subcontrol-origin: margin; left: 10px; color: #7dd3fc; }
+            QPushButton { background: #2563eb; border: none; border-radius: 6px; padding: 10px; font-weight: bold; }
+            QPushButton:hover { background: #1d4ed8; }
+            QPushButton:disabled { background: #334155; color: #94a3b8; }
+            QLineEdit, QDoubleSpinBox { background: #1e293b; border: 1px solid #475569; padding: 6px; border-radius: 4px; }
+            QProgressBar { border: 1px solid #475569; text-align: center; }
+            QProgressBar::chunk { background: #0284c7; }
+            QHeaderView::section { background: #1e293b; padding: 6px; }
+            QTabBar::tab { background: #1e293b; padding: 10px; }
+            QTabBar::tab:selected { background: #2563eb; }
+        ''')
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QHBoxLayout(central)
+        sidebar = QWidget()
+        sidebar.setMinimumWidth(300)
+        sidebar.setMaximumWidth(350)
+        side = QVBoxLayout(sidebar)
+        title = QLabel('SprintBiomechPro')
+        title.setStyleSheet('font-size: 24px; font-weight: bold; color: #7dd3fc;')
+        side.addWidget(title)
+        side.addWidget(QLabel('1. Perfil   →   2. Video   →   3. Resultados'))
+        profile = QGroupBox('Datos del atleta')
+        form = QFormLayout(profile)
+        self.athlete = QLineEdit(str(self.settings.value('athlete', '')))
+        self.athlete.setMaxLength(100)
+        self.mass = self.number(0, 300, 0, ' kg', 'Sin indicar')
+        self.height = self.number(0, 250, 0, ' cm', 'Sin indicar')
+        self.mass.setValue(float(self.settings.value('mass', 0)))
+        self.height.setValue(float(self.settings.value('height', 0)))
+        form.addRow('Nombre', self.athlete)
+        form.addRow('Peso', self.mass)
+        form.addRow('Estatura', self.height)
+        side.addWidget(profile)
+        self.btn_load = QPushButton('Cargar video')
+        side.addWidget(self.btn_load)
+        self.file_label = QLabel('Selecciona un video lateral de un solo atleta.')
+        self.file_label.setWordWrap(True)
+        self.file_label.setTextFormat(Qt.PlainText)
+        side.addWidget(self.file_label)
+        interval = QGroupBox('Intervalo y tiempo')
+        fields = QFormLayout(interval)
+        self.start = self.number(0, 100000, 0, ' s')
+        self.end = self.number(0, 100000, 0, ' s', 'Todo el video')
+        self.fps = self.number(0, 1000, 0, ' FPS', 'Usar FPS del archivo')
+        self.distance = self.number(0, 10000, 0, ' m', 'No indicada')
+        fields.addRow('Inicio del archivo', self.start)
+        fields.addRow('Final del archivo', self.end)
+        fields.addRow('FPS de captura', self.fps)
+        fields.addRow('Distancia recorrida', self.distance)
+        hint = QLabel('En cámara lenta, indica los FPS de grabación solo si los conoces. La distancia debe corresponder exactamente al intervalo seleccionado; permite calcular únicamente velocidad media.')
+        hint.setWordWrap(True)
+        fields.addRow(hint)
+        side.addWidget(interval)
+        self.btn_analyze = QPushButton('Analizar video')
+        self.btn_cancel = QPushButton('Cancelar análisis')
+        self.btn_export = QPushButton('Abrir resultados (PDF, CSV, video)')
+        self.btn_pdf = QPushButton('Abrir informe PDF')
+        self.btn_root = QPushButton('Elegir carpeta de resultados')
+        for button in (self.btn_analyze, self.btn_cancel, self.btn_export, self.btn_pdf, self.btn_root):
+            side.addWidget(button)
+        side.addStretch()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(sidebar)
+        scroll.setMinimumWidth(330)
+        scroll.setMaximumWidth(380)
+        layout.addWidget(scroll)
+        content = QVBoxLayout()
+        layout.addLayout(content, 1)
+        self.tabs = QTabWidget()
+        content.addWidget(self.tabs, 1)
+        monitor = QWidget()
+        ml = QVBoxLayout(monitor)
+        self.video_frame = QLabel('Carga un video para ver la vista previa')
         self.video_frame.setAlignment(Qt.AlignCenter)
-        self.video_frame.setStyleSheet("""
-            background-color: #000; border-radius: 15px; 
-            color: #475569; font-size: 20px; 
-            border: 2px dashed #334155;
-        """)
-
-        # --- TARJETAS DINÁMICAS ---
-        metrics_layout = QHBoxLayout()
-        metrics_layout.setSpacing(20)
-
-        def create_metric_card(title):
-            card = QFrame()
-            card.setObjectName("metricCard")
-            l = QVBoxLayout(card)
-            t = QLabel(title)
-            t.setStyleSheet("color: #94A3B8; font-size: 13px; font-weight: bold; text-transform: uppercase;")
-            v = QLabel("--") # Inicia vacío
-            v.setStyleSheet("color: #F8FAFC; font-size: 32px; font-weight: 900;")
-            l.addWidget(t)
-            l.addWidget(v)
-            return card, v
-
-        card_k, self.lbl_knee = create_metric_card("ÁNGULO RODILLA D")
-        card_o, self.lbl_overstride = create_metric_card("ÁNGULO RODILLA I")
-        card_r, self.lbl_reaction = create_metric_card("TIEMPO REACCIÓN")
-        card_c, self.lbl_confidence = create_metric_card("CONFIANZA")
-        card_t, self.lbl_trunk = create_metric_card("TRONCO")
-        card_ct, self.lbl_contacts = create_metric_card("CONTACTOS")
-
-        metrics_layout.addWidget(card_k)
-        metrics_layout.addWidget(card_o)
-        metrics_layout.addWidget(card_r)
-        metrics_layout.addWidget(card_c)
-        metrics_layout.addWidget(card_t)
-        metrics_layout.addWidget(card_ct)
-
-        # --- GRÁFICA EN VIVO ---
-        self.graph_widget = pg.PlotWidget()
-        self.graph_widget.setBackground('#1E293B')
-        self.graph_widget.setTitle("Ángulo Rodilla D vs Frame", color='#F8FAFC', size="14pt")
-        self.graph_widget.showGrid(x=True, y=True)
-        self.graph_widget.setLabel('left', 'Ángulo Rodilla D (°)', color='#F8FAFC')
-        self.graph_widget.setLabel('bottom', 'Frame', color='#F8FAFC')
-        self.graph_curve = self.graph_widget.plot([], [], pen=pg.mkPen('#38BDF8', width=2))
-        self.graph_x = []
-        self.graph_y = []
-
-        content_layout.addWidget(header_lbl)
-        content_layout.addWidget(self.video_frame, stretch=1)
-        content_layout.addLayout(metrics_layout)
-        content_layout.addWidget(self.graph_widget, stretch=0)
-
-        main_layout.addWidget(sidebar)
-        main_layout.addWidget(content_area)
-
-        # --- CONEXIONES ---
+        self.video_frame.setMinimumSize(400, 220)
+        self.video_frame.setStyleSheet('background: #020617; border-radius: 8px;')
+        ml.addWidget(self.video_frame, 1)
+        self.seek = QSlider(Qt.Horizontal)
+        self.seek.setEnabled(False)
+        ml.addWidget(self.seek)
+        self.seek_label = QLabel('Vista previa: 0.00 s')
+        ml.addWidget(self.seek_label)
+        self.plot = pg.PlotWidget(background='#0f172a')
+        self.plot.setMinimumHeight(140)
+        self.plot.setLabel('left', 'Rodilla derecha', units='°')
+        self.plot.setLabel('bottom', 'Tiempo analizado', units='s')
+        self.plot.setYRange(0, 180)
+        self.curve = self.plot.plot(pen=pg.mkPen('#38bdf8', width=2), connect='finite')
+        ml.addWidget(self.plot)
+        self.tabs.addTab(monitor, 'Video y ángulos')
+        results = QWidget()
+        rl = QVBoxLayout(results)
+        self.result_label = QLabel('Los resultados aparecerán al completar el análisis.')
+        self.result_label.setWordWrap(True)
+        rl.addWidget(self.result_label)
+        self.table = QTableWidget(5, 3)
+        self.table.setHorizontalHeaderLabels(['Métrica 2D', 'Media', 'Cobertura'])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table.verticalHeader().hide()
+        rl.addWidget(self.table)
+        limits = QLabel('Estos son ángulos proyectados en 2D, no una evaluación clínica ni una puntuación de técnica.\n\nLa cobertura es el porcentaje de fotogramas utilizables para cada métrica; no mide precisión.\n\nReacción, contactos, cadencia, potencia y velocidad máxima: no disponibles. Peso y estatura se guardan como datos del atleta.')
+        limits.setWordWrap(True)
+        rl.addWidget(limits)
+        self.tabs.addTab(results, 'Resultados y límites')
+        self.progress_bar = QProgressBar()
+        content.addWidget(self.progress_bar)
+        self.status_lbl = QLabel('Listo. Carga un video para comenzar.')
+        self.status_lbl.setWordWrap(True)
+        self.status_lbl.setTextFormat(Qt.PlainText)
+        content.addWidget(self.status_lbl)
+        default_root = str(Path(QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)) / 'SprintBiomechPro' / 'sesiones')
+        self.output_root = str(self.settings.value('output_root', default_root))
         self.btn_load.clicked.connect(self.load_video)
         self.btn_analyze.clicked.connect(self.run_analysis)
+        self.btn_cancel.clicked.connect(self.cancel_analysis)
         self.btn_export.clicked.connect(self.open_output_folder)
+        self.btn_pdf.clicked.connect(lambda: self.open_output_folder('informe.pdf'))
+        self.btn_root.clicked.connect(self.choose_root)
+        self.seek.sliderReleased.connect(self.preview_at_slider)
+        self.seek.valueChanged.connect(lambda value: self.seek_label.setText(f'Vista previa: {value/1000:.2f} s'))
+        self.set_busy(False)
+        self.clear_results()
 
-    def update_image(self, cv_img):
-        rgb_image = cv_img if cv_img.shape[2] == 3 else cv_img[..., :3]
-        rgb_image = cv2.cvtColor(rgb_image, cv2.COLOR_BGR2RGB)
-        h, w, ch = rgb_image.shape
-        bytes_per_line = ch * w
-        convert_to_Qt_format = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
-        p = convert_to_Qt_format.scaled(800, 600, Qt.KeepAspectRatio)
-        self.video_frame.setPixmap(QPixmap.fromImage(p))
+    @staticmethod
+    def number(low, high, value, suffix, special=None):
+        box = QDoubleSpinBox()
+        box.setRange(low, high)
+        box.setDecimals(2)
+        box.setValue(value)
+        box.setSuffix(suffix)
+        if special:
+            box.setSpecialValueText(special)
+        return box
 
-    def update_metrics_ui(self, data):
-        if 'knee_r' in data:
-            self.lbl_knee.setText(f"{data['knee_r']:.1f}°")
-        if 'knee_l' in data:
-            self.lbl_overstride.setText(f"{data['knee_l']:.1f}°")
-        if 'status' in data:
-            self.status_lbl.setText(data['status'])
+    def set_busy(self, busy):
+        for widget in (self.btn_load, self.btn_root, self.athlete, self.mass, self.height,
+                       self.start, self.end, self.fps, self.distance):
+            widget.setEnabled(not busy)
+        self.btn_analyze.setEnabled(not busy and self.current_video is not None)
+        self.btn_cancel.setEnabled(busy)
+        self.seek.setEnabled(not busy and self.current_video is not None)
+        self.btn_export.setEnabled(not busy and self.output_folder is not None)
+        self.btn_pdf.setEnabled(not busy and self.output_folder is not None)
 
-    def update_graph(self, knee_angle, frame_idx):
-        self.graph_x.append(frame_idx)
-        self.graph_y.append(knee_angle)
-        self.graph_curve.setData(self.graph_x, self.graph_y)
-
-    def run_analysis(self):
-        if not hasattr(self, 'current_video'):
-            self.status_lbl.setText("⚠️ Error: Carga un video primero")
-            self.status_lbl.setStyleSheet("color: #EF4444;")
-            return
-        
-        print(f"[DEBUG] Iniciando análisis para: {self.current_video}")
-        
-        # Limpiar gráfica
-        self.graph_x = []
-        self.graph_y = []
-        self.graph_curve.setData([], [])
-        
-        # Iniciar hilo de análisis en vivo
-        self.thread = AnalysisThread(self.current_video)
-        self.thread.change_pixmap_signal.connect(self.update_image)
-        self.thread.metrics_signal.connect(self.update_metrics_ui)
-        self.thread.graph_signal.connect(self.update_graph)
-        self.thread.error_signal.connect(self.on_analysis_error)
-        self.thread.finished.connect(self.on_analysis_finished)
-        self.thread.start()
-        
-        self.status_lbl.setText("🔄 Análisis en vivo...")
-        self.status_lbl.setStyleSheet("color: #F59E0B; font-weight: bold;")
-
-    def on_analysis_error(self, error_msg):
-        self.status_lbl.setText(f"⚠️ Error: {error_msg}")
-        self.status_lbl.setStyleSheet("color: #EF4444;")
-        print(f"[ERROR] Error en análisis: {error_msg}")
-
-    def on_analysis_finished(self):
-        """
-        Al terminar el análisis en vivo, ejecuta el motor profesional completo para guardar gráficas, métricas, video anotado, etc.
-        """
-        self.status_lbl.setText("Estado: Procesando resultados finales...")
-        self.status_lbl.setStyleSheet("color: #F59E0B;")
-        QApplication.processEvents()
-        try:
-            # 1. Arrancar el motor avanzado (Fases, Filtros, Contactos)
-            config = AnalysisConfig()
-            analyzer = BiomechSprintAnalyzer(self.current_video, config)
-            result = analyzer.analyze()
-
-            # 2. Generar y guardar las gráficas profesionales
-            if not os.path.exists("output"):
-                os.makedirs("output")
-            visualizer = SprintVisualizer(result)
-            visualizer.plot_angles_over_time("output/grafica_angulos.png")
-            visualizer.plot_contact_analysis("output/grafica_contactos.png")
-
-            # 3. Extraer y mostrar métricas finales
-            summary = result.summary_metrics
-            contacts = result.contacts_summary
-            reliability = result.reliability_report
-
-            ang_rodilla_d = summary.get('mean_knee_angle_right', 0)
-            ang_rodilla_i = summary.get('mean_knee_angle_left', 0)
-            reaccion = result.reaction_time_ms or 0
-            confianza = reliability.get('validity_percentage', 0)
-            trunk = summary.get('mean_trunk_lean', 0)
-            total_contacts = contacts.get('total_contacts', 0)
-
-            self.lbl_knee.setText(f"{ang_rodilla_d:.1f} <span style='font-size:14px; color:#64748B;'>°</span>")
-            self.lbl_overstride.setText(f"{ang_rodilla_i:.1f} <span style='font-size:14px; color:#64748B;'>°</span>")
-            self.lbl_reaction.setText(f"{reaccion:.0f} <span style='font-size:14px; color:#64748B;'>ms</span>")
-            self.lbl_confidence.setText(f"{confianza:.0f} <span style='font-size:14px; color:#64748B;'>%</span>")
-            self.lbl_trunk.setText(f"{trunk:.1f} <span style='font-size:14px; color:#64748B;'>°</span>")
-            self.lbl_contacts.setText(f"{total_contacts} <span style='font-size:14px; color:#64748B;'>pasos</span>")
-
-            # 4. Generar video anotado
-            self.generate_annotated_video(result)
-
-            # 5. Guardar métricas de sesión
-            self.save_session_metrics(result)
-
-            # 6. Éxito
-            self.status_lbl.setText("✅ ¡Análisis Completado!")
-            self.status_lbl.setStyleSheet("color: #10B981; font-weight: bold;")
-            self.btn_export.setStyleSheet("background-color: #3B82F6;")
-            print(visualizer.generate_report_text())
-
-        except Exception as e:
-            self.status_lbl.setText("⚠️ Error fatal en análisis.")
-            self.status_lbl.setStyleSheet("color: #EF4444;")
-            print(f"Detalle del error: {e}")
-            import traceback
-            traceback.print_exc()
+    def clear_results(self):
+        self.result, self.output_folder = None, None
+        self.graph_x, self.graph_y = [], []
+        self.curve.setData([], [])
+        self.progress_bar.setValue(0)
+        self.result_label.setText('Sin resultados para el análisis actual.')
+        for i, label in enumerate(METRICS.values()):
+            for j, value in enumerate((label, 'N/D', 'N/D')):
+                self.table.setItem(i, j, QTableWidgetItem(value))
+        self.btn_export.setEnabled(False)
+        self.btn_pdf.setEnabled(False)
 
     def load_video(self):
-        filename, _ = QFileDialog.getOpenFileName(self, "Seleccionar Video", "", "Videos (*.mp4 *.avi *.mov *.mkv)")
-        if filename:
-            self.current_video = filename
-            nombre_archivo = os.path.basename(filename)
-            self.status_lbl.setText(f"Video: {nombre_archivo}")
-            self.status_lbl.setStyleSheet("color: #38BDF8; font-weight: bold;")
-            self.video_frame.setText(f"🎬 {nombre_archivo}\n\nPresiona 'ANALIZAR' para comenzar")
+        path, _ = QFileDialog.getOpenFileName(self, 'Seleccionar video', '', 'Videos (*.mp4 *.avi *.mov *.mkv *.m4v)')
+        if path:
+            self.load_path(path)
 
-    def generate_annotated_video(self, result):
-        """Genera video con skeleton y métricas."""
-        import cv2
-        import mediapipe as mp
-        from datetime import datetime
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = f"analysis_results/{timestamp}"
-        os.makedirs(output_dir, exist_ok=True)
-        out_path = f"{output_dir}/sprint_analyzed.mp4"
-        
+    def load_path(self, path):
+        try:
+            info, frame = inspect_video(path)
+        except Exception as exc:
+            self.status_lbl.setText(str(exc))
+            return False
+        self.current_video = path
+        self.clear_results()
+        self.start.setValue(0)
+        self.end.setValue(0)
+        self.start.setMaximum(info['duration'])
+        self.end.setMaximum(info['duration'])
+        self.fps.setValue(0)
+        self.distance.setValue(0)
+        self.seek.setRange(0, max(0, int((info['frames']-1)/info['fps']*1000)))
+        self.seek.setValue(0)
+        self.file_label.setText(f"{Path(path).name}\n{info['width']} × {info['height']} · {info['fps']:.2f} FPS · {info['duration']:.2f} s")
+        self.update_image(frame)
+        self.status_lbl.setText('Video listo. Revisa perfil e intervalo y pulsa Analizar video.')
+        self.set_busy(False)
+        return True
+
+    def preview_at_slider(self):
+        if not self.current_video:
+            return
         cap = cv2.VideoCapture(self.current_video)
-        fps = result.fps
-        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        out = cv2.VideoWriter(out_path, fourcc, fps, (w, h))
-        
-        mp_pose = mp.solutions.pose
-        mp_drawing = mp.solutions.drawing_utils
-        
-        frame_idx = 0
-        time_series = result.time_series
-        
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            # Obtener landmarks del historial
-            if hasattr(result, 'landmarks_history') and frame_idx < len(result.landmarks_history):
-                lms = result.landmarks_history[frame_idx]
-                if lms:
-                    # Dibujar skeleton
-                    mp_drawing.draw_landmarks(
-                        frame, lms, mp_pose.POSE_CONNECTIONS,
-                        mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2, circle_radius=3),
-                        mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2)
-                    )
-                    
-                    # Mostrar métricas en el frame
-                    self.draw_metrics_on_frame(frame, time_series, frame_idx)
-            
-            out.write(frame)
-            frame_idx += 1
-        
-        cap.release()
-        out.release()
-        print(f"✅ Video guardado: {out_path}")
+        try:
+            cap.set(cv2.CAP_PROP_POS_MSEC, self.seek.value())
+            ok, frame = cap.read()
+            if ok:
+                self.update_image(frame)
+        finally:
+            cap.release()
 
-    def open_output_folder(self):
-        """Abre la carpeta de resultados."""
-        if os.path.exists("output"):
-            os.startfile("output")
-        elif os.path.exists("analysis_results"):
-            folders = [f for f in os.listdir("analysis_results") if os.path.isdir(f"analysis_results/{f}")]
-            if folders:
-                latest = sorted(folders)[-1]
-                os.startfile(f"analysis_results/{latest}")
+    def update_image(self, frame):
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        image = QImage(rgb.data, rgb.shape[1], rgb.shape[0], rgb.strides[0], QImage.Format_RGB888).copy()
+        self.video_frame.setPixmap(QPixmap.fromImage(image).scaled(self.video_frame.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+    def run_analysis(self):
+        if not self.current_video or (self.thread is not None and self.thread.isRunning()):
+            return
+        try:
+            config = AnalysisConfig(athlete=self.athlete.text().strip(), mass_kg=self.mass.value() or None,
+                height_cm=self.height.value() or None, start_s=self.start.value(), end_s=self.end.value() or None,
+                capture_fps=self.fps.value() or None, distance_m=self.distance.value() or None)
+        except ValueError as exc:
+            self.status_lbl.setText(str(exc))
+            return
+        for key, value in [('athlete', config.athlete), ('mass', self.mass.value()), ('height', self.height.value())]:
+            self.settings.setValue(key, value)
+        self.clear_results()
+        self.set_busy(True)
+        self.tabs.setCurrentIndex(0)
+        self.status_lbl.setText('Analizando… Puedes cancelar. La primera ejecución puede preparar el modelo.')
+        self.thread = AnalysisThread(self.current_video, config, self.output_root)
+        self.thread.progress.connect(self.on_progress)
+        self.thread.succeeded.connect(self.on_success)
+        self.thread.failed.connect(lambda message: self.status_lbl.setText('Error: ' + message))
+        self.thread.cancelled.connect(lambda: self.status_lbl.setText('Análisis cancelado. No se guardaron resultados parciales.'))
+        self.thread.finished.connect(lambda: self.set_busy(False))
+        self.thread.start()
+
+    def on_progress(self, frame, row, done, total):
+        self.update_image(frame)
+        self.progress_bar.setValue(round(100 * done / total))
+        self.graph_x.append(row['time_s'])
+        self.graph_y.append(row['knee_right'] if row['knee_right'] is not None else np.nan)
+        self.curve.setData(self.graph_x, self.graph_y)
+        self.status_lbl.setText(f'Analizando fotograma {done} de {total}…')
+
+    def on_success(self, result, folder):
+        self.result, self.output_folder = result, folder
+        for i, key in enumerate(METRICS):
+            data = result['summary'][key]
+            self.table.setItem(i, 1, QTableWidgetItem(f"{data['mean_deg']:.1f}°" if data['mean_deg'] is not None else 'N/D'))
+            self.table.setItem(i, 2, QTableWidgetItem(f"{data['coverage_pct']:.1f}%"))
+        speed = result['mean_speed_m_s']
+        self.result_label.setText(f"{result['processed_frames']} fotogramas · {result['duration_s']:.3f} s analizados\n"
+            + (f'Velocidad media según distancia declarada: {speed:.2f} m/s\n' if speed is not None else '')
+            + '\n'.join(result['warnings']))
+        self.progress_bar.setValue(100)
+        self.tabs.setCurrentIndex(1)
+        self.status_lbl.setText(('Finalizado con advertencias. ' if result['warnings'] else 'Análisis completado. ') + f'Resultados: {folder}')
+
+    def cancel_analysis(self):
+        if self.thread is not None and self.thread.isRunning():
+            self.thread.requestInterruption()
+            self.btn_cancel.setEnabled(False)
+            self.status_lbl.setText('Cancelando y cerrando los archivos…')
+
+    def choose_root(self):
+        path = QFileDialog.getExistingDirectory(self, 'Carpeta para las sesiones', self.output_root)
+        if path:
+            self.output_root = path
+            self.settings.setValue('output_root', path)
+            self.status_lbl.setText('Las próximas sesiones se guardarán en: ' + path)
+
+    def open_output_folder(self, filename=None):
+        if self.output_folder:
+            path = Path(self.output_folder)
+            if isinstance(filename, str):
+                path /= filename
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
+                self.status_lbl.setText('No se pudo abrir automáticamente. Resultados: ' + str(path))
+
+    def closeEvent(self, event):
+        if self.thread is not None and self.thread.isRunning():
+            self.cancel_analysis()
+            self.status_lbl.setText('Cancelando. Cierra la ventana nuevamente cuando termine.')
+            event.ignore()
         else:
-            self.status_lbl.setText("No hay resultados aún")
-            self.status_lbl.setStyleSheet("color: #F59E0B;")
-    
-    def draw_metrics_on_frame(self, frame, time_series, frame_idx):
-        """Dibuja métricas en el frame."""
-        h, w = frame.shape[:2]
-        
-        # Fondo semi-transparente
-        overlay = frame.copy()
-        cv2.rectangle(overlay, (10, 10), (350, 180), (0, 0, 0), -1)
-        cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
-        
-        # Obtener valores
-        knee_r = time_series['knee_angle_right'][frame_idx] if frame_idx < len(time_series['knee_angle_right']) else 0
-        knee_l = time_series['knee_angle_left'][frame_idx] if frame_idx < len(time_series['knee_angle_left']) else 0
-        hip = time_series['hip_angle_right'][frame_idx] if frame_idx < len(time_series['hip_angle_right']) else 0
-        trunk = time_series['trunk_lean'][frame_idx] if frame_idx < len(time_series['trunk_lean']) else 0
-        
-        # Mostrar métricas
-        import cv2
-        cv2.putText(frame, f"Frame: {frame_idx}", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(frame, f"Rodilla D: {knee_r:.1f}°", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        cv2.putText(frame, f"Rodilla I: {knee_l:.1f}°", (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        cv2.putText(frame, f"Cadera: {hip:.1f}°", (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-        cv2.putText(frame, f"Tronco: {trunk:.1f}°", (20, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-        
-        # Score
-        score = self.calculate_score(knee_r, knee_l, hip, trunk)
-        color = (0, 255, 0) if score >= 70 else (0, 165, 255) if score >= 50 else (0, 0, 255)
-        cv2.putText(frame, f"Score: {score}/100", (20, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-    
-    def calculate_score(self, knee_r, knee_l, hip, trunk):
-        """Calcula score biomecánico."""
-        score = 100
-        if knee_r > 170 or knee_r < 140: score -= 15
-        if knee_l > 170 or knee_l < 140: score -= 15
-        if hip > 160: score -= 10
-        if abs(trunk) > 30: score -= 10
-        asymmetry = abs(knee_r - knee_l)
-        if asymmetry > 15: score -= int(asymmetry)
-        return max(0, min(100, int(score)))
-    
-    def save_session_metrics(self, result):
-        """Guarda métricas de la sesión."""
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = f"analysis_results/{timestamp}"
-        
-        # Crear directorio si no existe
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Guardar resumen
-        summary_file = f"{output_dir}/resumen.txt"
-        with open(summary_file, 'w') as f:
-            f.write("=" * 50 + "\n")
-            f.write("REPORTE BIOMECÁNICO - BOLT REBOOT\n")
-            f.write("=" * 50 + "\n\n")
-            f.write(f"Video: {result.video_path}\n")
-            f.write(f"FPS: {result.fps:.1f}\n")
-            f.write(f"Duración: {result.duration_seconds:.2f}s\n\n")
-            
-            f.write("MÉTRICAS PRINCIPALES:\n")
-            f.write("-" * 30 + "\n")
-            summary = result.summary_metrics
-            f.write(f"Ángulo Rodilla D: {summary.get('mean_knee_angle_right', 0):.1f}°\n")
-            f.write(f"Ángulo Rodilla I: {summary.get('mean_knee_angle_left', 0):.1f}°\n")
-            f.write(f"Ángulo Cadera D: {summary.get('mean_hip_angle_right', 0):.1f}°\n")
-            f.write(f"Ángulo Cadera I: {summary.get('mean_hip_angle_left', 0):.1f}°\n")
-            f.write(f"Inclinación Tronco: {summary.get('mean_trunk_lean', 0):.1f}°\n")
-            f.write(f"Asimetría Rodillas: {summary.get('knee_asymmetry', 0):.1f}°\n")
-            f.write(f"Asimetría Cadera: {summary.get('hip_asymmetry', 0):.1f}°\n\n")
-            
-            f.write("TIEMPOS:\n")
-            f.write("-" * 30 + "\n")
-            f.write(f"Tiempo Reacción: {result.reaction_time_ms or 'N/A'} ms\n")
-            f.write(f"Block Clearance: {result.block_clearance_time_ms or 'N/A'} ms\n\n")
-            
-            f.write("CONTACTOS:\n")
-            f.write("-" * 30 + "\n")
-            contacts = result.contacts_summary
-            f.write(f"Total Contactos: {contacts.get('total_contacts', 0)}\n")
-            f.write(f"Tiempo Vuelo Prom: {contacts.get('average_flight_time_ms', 0):.0f} ms\n")
-            f.write(f"Tiempo Contacto Prom: {contacts.get('average_ground_time_ms', 0):.0f} ms\n\n")
-            
-            f.write("CONFIANZA:\n")
-            f.write("-" * 30 + "\n")
-            reliability = result.reliability_report
-            f.write(f"Calidad: {reliability.get('validity_percentage', 0):.1f}%\n")
-            f.write(f"Frames Válidos: {reliability.get('valid_frames', 0)}\n")
-            f.write(f"Frames Totales: {reliability.get('total_frames', 0)}\n")
-        
-        print(f"✅ Resumen guardado en: {summary_file}")
+            event.accept()
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = ModernSprintDashboard()
     window.show()
