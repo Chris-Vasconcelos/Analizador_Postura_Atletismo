@@ -2,6 +2,8 @@
 
 Aplicación de escritorio para revisar videos de sprint, medir ángulos **proyectados en 2D** y guardar una sesión reproducible. Diseñada para Windows 10/11 y Python 3.11 o 3.12 de 64 bits. No requiere GPU.
 
+Esta rama es una **beta técnica** de análisis de postura en video. El [estado de los requisitos de la versión 2.1](docs/REQUISITOS-2.1.md) detalla qué funciones se pueden probar hoy y cuáles requieren desarrollo o validación.
+
 ## Qué funciona en esta versión
 
 - Perfil con nombre, peso (kg) y estatura (cm), conservado entre ejecuciones.
@@ -17,7 +19,7 @@ Aplicación de escritorio para revisar videos de sprint, medir ángulos **proyec
 
 ## Probar en Windows
 
-1. Descarga el ZIP de **esta rama** desde GitHub (`Code → Download ZIP`) y extráelo. No ejecutes los archivos dentro del ZIP.
+1. Descarga el ZIP de **esta rama** desde GitHub (`Code → Download ZIP`) y extráelo en una carpeta nueva. Si ya usas la aplicación, conserva tu carpeta de sesiones y no elimines la instalación anterior hasta probar esta.
 2. Instala Python **3.12 de 64 bits** (o 3.11), incluido el lanzador `py`, si aún no lo tienes.
 3. Abre `install.bat`. Instala las dependencias en `.venv` dentro de esta carpeta; requiere Internet.
 4. Cuando indique que terminó, abre `run_sprint_analyzer.bat`.

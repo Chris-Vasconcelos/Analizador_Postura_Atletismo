@@ -144,6 +144,7 @@ class ModernSprintDashboard(QMainWindow):
         self.seek.setTracking(False)
         ml.addWidget(self.seek)
         self.seek_label = QLabel('Vista previa: 0.00 s')
+        self.seek_label.setToolTip('El tiempo se calcula con los FPS medios, igual que el intervalo de análisis.')
         ml.addWidget(self.seek_label)
         self.plot = pg.PlotWidget(background='#0f172a')
         self.plot.setMinimumHeight(140)
@@ -275,9 +276,7 @@ class ModernSprintDashboard(QMainWindow):
                 ok, frame = cap.read()
             if ok:
                 self.update_image(frame)
-                timestamp = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000
-                if not math.isfinite(timestamp) or timestamp <= 0:
-                    timestamp = frame_index / self.preview_fps
+                timestamp = frame_index / self.preview_fps
                 self.seek_label.setText(f'Vista previa: {timestamp:.2f} s')
         finally:
             cap.release()
