@@ -1,0 +1,24 @@
+# requirements_final.txt - Sprint Biomechanics Pro
+# Versiones exactas para compatibilidad garantizada
+
+# Core AI y Computer Vision
+mediapipe==0.10.5
+opencv-python==4.8.1.78
+
+# Análisis numérico y científico
+numpy==1.24.3
+scipy==1.11.4
+pandas==2.1.4
+
+# Interfaz gráfica
+PyQt5==5.15.9
+pyqtgraph==0.13.3
+
+# Reportes y PDFs
+reportlab==4.0.4
+
+# Utilidades adicionales
+scikit-learn==1.3.2
+filterpy==1.4.5
+imutils==0.5.4
+moviepy==1.0.3

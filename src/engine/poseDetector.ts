@@ -4,6 +4,31 @@ import { getFeedbackMessage, POSE_LANDMARKS } from './biomechanics';
 
 let landmarkerInstance: PoseLandmarker | null = null;
 let initPromise: Promise<PoseLandmarker> | null = null;
+let lastVideoTimestampMs = 0;
+
+/**
+ * MediaPipe PoseLandmarker in VIDEO mode requires strictly monotonically
+ * increasing timestamps across the entire lifetime of a landmarker instance
+ * (including video replays, seeks, and newly uploaded videos).
+ */
+export function getNextMonotonicTimestampMs(): number {
+  const nowMs = Math.round(performance.now());
+  lastVideoTimestampMs = nowMs > lastVideoTimestampMs ? nowMs : lastVideoTimestampMs + 1;
+  return lastVideoTimestampMs;
+}
+
+export function resetPoseLandmarker(): void {
+  if (landmarkerInstance) {
+    try {
+      landmarkerInstance.close();
+    } catch {
+      // Ignore close errors if graph is already invalid
+    }
+  }
+  landmarkerInstance = null;
+  initPromise = null;
+  lastVideoTimestampMs = 0;
+}
 
 export async function getPoseLandmarker(): Promise<PoseLandmarker> {
   if (landmarkerInstance) return landmarkerInstance;

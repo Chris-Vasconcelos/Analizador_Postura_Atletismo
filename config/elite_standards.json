@@ -1,0 +1,50 @@
+{
+  "usain_bolt": {
+    "athlete": "Usain Bolt",
+    "category": "Masculino",
+    "record_100m": "9.58s (WR)",
+    "reaction_time_ms": 146,
+    "max_velocity_ms": 12.27,
+    "step_frequency_hz": 4.49,
+    "step_length_m": 2.44,
+    "trunk_accel_deg": 38,
+    "trunk_max_v_deg": 9,
+    "ground_contact_ms": 86
+  },
+  "christian_coleman": {
+    "athlete": "Christian Coleman",
+    "category": "Masculino",
+    "record_100m": "9.76s",
+    "reaction_time_ms": 128,
+    "max_velocity_ms": 11.85,
+    "step_frequency_hz": 4.95,
+    "step_length_m": 2.31,
+    "trunk_accel_deg": 42,
+    "trunk_max_v_deg": 11,
+    "ground_contact_ms": 89
+  },
+  "florence_griffith_joyner": {
+    "athlete": "Florence Griffith-Joyner",
+    "category": "Femenino",
+    "record_100m": "10.49s (WR)",
+    "reaction_time_ms": 140,
+    "max_velocity_ms": 10.95,
+    "step_frequency_hz": 4.78,
+    "step_length_m": 2.25,
+    "trunk_accel_deg": 36,
+    "trunk_max_v_deg": 10,
+    "ground_contact_ms": 94
+  },
+  "shelly_ann_fraser_pryce": {
+    "athlete": "Shelly-Ann Fraser-Pryce",
+    "category": "Femenino",
+    "record_100m": "10.60s",
+    "reaction_time_ms": 132,
+    "max_velocity_ms": 10.78,
+    "step_frequency_hz": 5.02,
+    "step_length_m": 2.14,
+    "trunk_accel_deg": 40,
+    "trunk_max_v_deg": 11,
+    "ground_contact_ms": 92
+  }
+}

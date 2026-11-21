@@ -22,7 +22,13 @@ import {
   extractFrameMetricsFromLandmarks,
   POSE_LANDMARKS,
 } from './engine/biomechanics';
-import { drawMetricsHud, drawSkeletonOverlay, getPoseLandmarker } from './engine/poseDetector';
+import {
+  drawMetricsHud,
+  drawSkeletonOverlay,
+  getNextMonotonicTimestampMs,
+  getPoseLandmarker,
+  resetPoseLandmarker,
+} from './engine/poseDetector';
 import {
   DEMO_PROFILES,
   DemoSprintProfile,
@@ -270,7 +276,25 @@ export function App() {
       const estimatedTotal = Math.max(1, Math.round((videoEl.duration || 5) * fps));
       setTotalExpectedFrames(estimatedTotal);
 
-      videoEl.currentTime = 0;
+      // Ensure video is cleanly rewound to frame 0 before starting playback
+      if (videoEl.currentTime > 0.01) {
+        await new Promise<void>((resolve) => {
+          const timeoutId = window.setTimeout(() => {
+            videoEl.removeEventListener('seeked', onSeeked);
+            resolve();
+          }, 500);
+          const onSeeked = () => {
+            window.clearTimeout(timeoutId);
+            videoEl.removeEventListener('seeked', onSeeked);
+            resolve();
+          };
+          videoEl.addEventListener('seeked', onSeeked);
+          videoEl.currentTime = 0;
+        });
+      }
+
+      if (!runningRef.current) return;
+
       videoEl.muted = true;
       await videoEl.play();
 
@@ -306,11 +330,29 @@ export function App() {
           return;
         }
 
-        if (videoEl.readyState >= 2 && videoEl.currentTime !== lastVideoTime) {
+        if (
+          videoEl.readyState >= 2 &&
+          videoEl.videoWidth > 0 &&
+          videoEl.videoHeight > 0 &&
+          videoEl.currentTime > lastVideoTime
+        ) {
           lastVideoTime = videoEl.currentTime;
-          const tsMs = Math.round(videoEl.currentTime * 1000);
-          const detection = landmarker.detectForVideo(videoEl, tsMs);
-          const poseLandmarks = detection.landmarks?.[0];
+          let poseLandmarks = null;
+          try {
+            const tsMs = getNextMonotonicTimestampMs();
+            const detection = landmarker.detectForVideo(videoEl, tsMs);
+            poseLandmarks = detection.landmarks?.[0] ?? null;
+          } catch (detectErr) {
+            console.error('MediaPipe detectForVideo error:', detectErr);
+            resetPoseLandmarker();
+            runningRef.current = false;
+            setIsAnalyzing(false);
+            if (!videoEl.paused) videoEl.pause();
+            const errMsg = detectErr instanceof Error ? detectErr.message : 'Error procesando frame';
+            setStatusText(`⚠️ Error de detección: ${errMsg}. Reintenta el análisis.`);
+            setStatusTone('error');
+            return;
+          }
 
           if (poseLandmarks && poseLandmarks.length >= 33) {
             const fm = extractFrameMetricsFromLandmarks(
