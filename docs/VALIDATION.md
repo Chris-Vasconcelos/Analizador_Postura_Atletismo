@@ -20,7 +20,8 @@
 ## Límites y siguiente aceptación
 
 - Falta una prueba interactiva en una PC Windows física: instalar con `install.bat`, abrir con el lanzador, confirmar lectura/escritura en Documentos y apertura del PDF con el programa predeterminado.
-- Se agrega CI para Windows con Python 3.11/3.12 y Linux con 3.12. Consultar sus resultados en GitHub; su presencia no significa que haya aprobado.
+- CI confirmado en el commit `58129f3`: las 15 pruebas aprobaron en Windows con Python 3.11 y 3.12, y en Linux con Python 3.12. Ejecución: https://github.com/Chris-Vasconcelos/Analizador_Postura_Atletismo/actions/runs/44854553438 .
+- El fallo inicial de Windows era una lectura del JSON sin codificación explícita dentro de una prueba. Se corrigió a UTF-8 y se verificó que el nombre con acento se conserva; el exportador ya escribía UTF-8.
 - El video de muestra contiene varias personas. Sin selección de identidad no se puede asegurar que todos los ángulos sean del mismo atleta. Para uso exploratorio emplear un solo atleta en cuadro.
 - Falta validar ángulos contra anotaciones manuales y registrar error por articulación, fase y vista de cámara antes de afirmar precisión.
 - No se implementan aún contactos, reacción, cadencia, potencia, velocidad máxima ni distancia automática.
